@@ -110,9 +110,21 @@ Windows GCC derives its tool search path from the working directory on this WSL 
 
 The ST-LINK server shipped by NECTO 7.4.4 was verified from WSL. Use `debug/start-st-gdbserver.sh` and `target remote 127.0.0.1:3335` in GDB. It can step the same running image at a C source line. Use OpenOCD on 3333 for the repo batch verifier. [Mikroe build and debugger details](docs/mikroe.md)
 
-The license dongle stays attached to Windows. Windows identifies it as `1011:0022`, bus description `mE Dongle mC ARM`. The legacy IDE needs normal Windows elevation when opened through WSL. The last elevated launch was canceled before the IDE opened. Use its Help menu to confirm dongle recognition. Keep license values and serials out of logs and Git. The source check target `make mikroc-source-check` uses GCC/CMSIS to build the same C application and has passed SWD and Renode.
+## Classic mikroC PRO for ARM
 
-The classic mikroC compiler is at `mikroC PRO for ARM/mikroCARM.exe`. The project and headless log path are under `examples/mikroc/` and `build/mikroc/`. Its source-file error `340` is still open. An installed binary for NECTO's **mikroC AI for ARM** would provide another native path. Check `NECTOStudio7/packages/compilers/` after an update.
+The Windows license dongle is HID `1011:0022`, bus description `mE Dongle mC ARM`. Keep it attached to Windows. Use **Help → License Activation** in the classic IDE for license status. Keep license values and serials out of logs and Git.
+
+The elevated classic IDE built the staged `.mcpar` and recorded the working `mikroCARM.exe` invocation in `hello.log`. `make mikroc` now replays that exact argument format from WSL without elevation. It stages the application under `$UNI_WINDOWS_ROOT/.uni-clicker-lab-cache/mikroc/run.*`. The prior `error[340]` came from a different command line. Use Windows `ProcessStartInfo.Arguments`, a drive-letter working directory, a relative `hello.c`, trailing backslashes in the search paths, and the explicit `Uses\ST M7` library list in `tools/build-mikroc.ps1`. If the headless build fails, check the stage log and the dongle before changing compiler flags. If project options change, approve the normal UAC launch, open the staged `.mcpar` in the IDE, build, and compare the newly logged command.
+
+```bash
+make mikroc
+"$cli" analyze mikroc
+tools/simulate.sh mikroc
+tools/simulate.sh mikroc gpio
+tools/verify-bench.sh mikroc
+```
+
+The native HEX, BIN, ASM, LST, DBG and compiler log are in `build/mikroc/`. The generated ELF preserves the flashed bytes and adds application line mappings and symbols from the listing. The CLI verifies native startup at `0x080002c8`, MSP `0x2004fffc`, and breaks after vendor initialization at `mikroc_app_entry`. GDB stepped from `hello.c:32` to `hello.c:34` on the physical board. The listing derives source addresses and counter locations. Keep the vendor `.dbg` for the classic IDE, and use explicit memory types when reading the counters in GDB. The native image passed the exact USART6 and PD7 timing tests in Renode. The `mikroc-source-check` target independently builds the C source with GCC/CMSIS. [Reproduction and debugger notes](docs/mikroe.md)
 
 ## Frameworks and examples
 
@@ -124,7 +136,7 @@ The classic mikroC compiler is at `mikroC PRO for ARM/mikroCARM.exe`. The projec
 | Embedded Swift | `examples/swift/`, `make swift` | Flash, SWD, Renode |
 | Zig / MicroZig | `examples/zig/`, `make zig` | Flash, SWD, Renode |
 | NECTO / mikroSDK | `examples/necto/`, `make necto necto-windows` | Flash, SWD, Renode and Windows compiler equivalence |
-| Classic mikroC | `examples/mikroc/`, `make mikroc` and `make mikroc-source-check` | Vendor CLI repro and separate GCC/CMSIS source validation on hardware and Renode |
+| Classic mikroC | `examples/mikroc/`, `make mikroc` and `make mikroc-source-check` | Matching IDE and headless native images, flash readback, SWD source stepping, Renode UART and GPIO, independent GCC/CMSIS check |
 | FreeRTOS | `examples/frameworks/freertos/`, `make freertos` | Flash, SWD, Renode |
 | Eclipse ThreadX | `examples/frameworks/threadx/`, `make threadx` | Flash, SWD, Renode |
 | libopencm3 | `examples/frameworks/libopencm3/`, `make libopencm3` | Flash, SWD, Renode |

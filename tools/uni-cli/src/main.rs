@@ -12,7 +12,7 @@ const FLASH_SIZE: usize = 1024 * 1024;
 const RAM_BASE: u32 = 0x2000_0000;
 const RAM_TOP: u32 = 0x2005_0000;
 const HELP: &str = "uni-cli <command> [firmware] [endpoint]
-  build <stm32cube|arduino|rust|swift|zig|necto|necto-windows|mikroc-source-check|freertos|threadx|libopencm3|all>   Build firmware with Make
+  build <stm32cube|arduino|rust|swift|zig|necto|necto-windows|mikroc|mikroc-source-check|freertos|threadx|libopencm3|all>   Build firmware with Make
   analyze <firmware>                      Inspect vectors, sections, and symbols
   probe                                   Identify the MCU over STM32CubeProgrammer SWD
   flash <firmware>                        Program, verify, and reset the UNI Clicker
@@ -28,6 +28,7 @@ enum Firmware {
     Zig,
     Necto,
     NectoWindows,
+    Mikroc,
     MikrocSourceCheck,
     FreeRtos,
     ThreadX,
@@ -44,6 +45,7 @@ impl Firmware {
             "zig" => Ok(Self::Zig),
             "necto" => Ok(Self::Necto),
             "necto-windows" => Ok(Self::NectoWindows),
+            "mikroc" => Ok(Self::Mikroc),
             "mikroc-source-check" => Ok(Self::MikrocSourceCheck),
             "freertos" => Ok(Self::FreeRtos),
             "threadx" => Ok(Self::ThreadX),
@@ -61,6 +63,7 @@ impl Firmware {
             Self::Zig => "zig",
             Self::Necto => "necto",
             Self::NectoWindows => "necto-windows",
+            Self::Mikroc => "mikroc",
             Self::MikrocSourceCheck => "mikroc-source-check",
             Self::FreeRtos => "freertos",
             Self::ThreadX => "threadx",
@@ -81,6 +84,7 @@ impl Firmware {
             Self::Arduino => "setup",
             Self::Swift => "uni_swift_main",
             Self::Zig => "zig_entry",
+            Self::Mikroc => "mikroc_app_entry",
             Self::MikrocSourceCheck => "mikroc_source_entry",
             _ => "main",
         }
@@ -94,7 +98,7 @@ impl Firmware {
             Self::Swift => "Embedded Swift",
             Self::Zig => "Zig",
             Self::Necto | Self::NectoWindows => "NECTO",
-            Self::MikrocSourceCheck => "mikroC",
+            Self::Mikroc | Self::MikrocSourceCheck => "mikroC",
             Self::FreeRtos => "FreeRTOS",
             Self::ThreadX => "ThreadX",
             Self::LibOpenCm3 => "libopencm3",
@@ -110,7 +114,7 @@ struct Image {
 }
 
 impl Image {
-    fn read(path: &Path) -> Result<Self> {
+    fn read(path: &Path, firmware: Firmware) -> Result<Self> {
         let bytes = fs::read(path)?;
         if !(8..=FLASH_SIZE).contains(&bytes.len()) {
             return Err(format!("{} exceeds the STM32F746 flash limits", path.display()).into());
@@ -118,8 +122,14 @@ impl Image {
         let stack = u32::from_le_bytes(bytes[..4].try_into()?);
         let reset = u32::from_le_bytes(bytes[4..8].try_into()?);
         let reset_address = reset & !1;
+        // Native mikroC starts at a word-aligned MSP and aligns it in the first instruction.
+        let stack_alignment = if matches!(firmware, Firmware::Mikroc) {
+            4
+        } else {
+            8
+        };
         if !(RAM_BASE + 8..=RAM_TOP).contains(&stack)
-            || stack % 8 != 0
+            || stack % stack_alignment != 0
             || !(FLASH_BASE..FLASH_BASE + bytes.len() as u32).contains(&reset_address)
             || reset & 1 == 0
         {
@@ -188,7 +198,7 @@ fn probe(program: &OsStr) -> Result<()> {
 
 fn flash(firmware: Firmware) -> Result<()> {
     let binary = firmware.artifact("bin");
-    Image::read(&binary)?;
+    Image::read(&binary, firmware)?;
     let path = binary.canonicalize()?;
     let programmer = tool("CUBE_PROG", "STM32_Programmer_CLI");
     let windows_exe = Path::new(&programmer)
@@ -233,7 +243,7 @@ fn symbol_line<'a>(symbols: &'a str, name: &str) -> Result<&'a str> {
 fn analyze(firmware: Firmware) -> Result<()> {
     let binary = firmware.artifact("bin");
     let elf = firmware.artifact("elf");
-    let image = Image::read(&binary)?;
+    let image = Image::read(&binary, firmware)?;
     println!(
         "{} bytes at {FLASH_BASE:#010x}, initial MSP {:#010x}, reset vector {:#010x}",
         image.length, image.stack, image.reset
@@ -280,7 +290,7 @@ fn debug(firmware: Firmware, endpoint: Option<&str>, verify: bool) -> Result<()>
         .arg(format!("target extended-remote {endpoint}"));
 
     if verify {
-        let image = Image::read(&firmware.artifact("bin"))?;
+        let image = Image::read(&firmware.artifact("bin"), firmware)?;
         let symbols = read_symbols(&elf)?;
         for (variable, symbol) in [
             ("uni_entry", firmware.entry()),

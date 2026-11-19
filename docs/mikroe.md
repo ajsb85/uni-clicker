@@ -56,12 +56,43 @@ ST GDB server commands include `monitor reset` and `monitor halt`. The OpenOCD b
 
 ## Classic mikroC PRO for ARM
 
-[The example](../examples/mikroc/) contains a native `.mcpar` project and a C source using the compiler's STM32F746ZG register names. `make mikroc` stages the inputs on the Windows filesystem and invokes the installed `mikroCARM.exe` with listing, debug and BIN output enabled. The run log is `build/mikroc/compiler.log`. The wrapper checks that a HEX image was actually generated because this executable can return exit status zero after reporting errors.
+[The example](../examples/mikroc/) contains a native `.mcpar` project for the STM32F746ZG at 16 MHz and a C source using the compiler's register names. Windows enumerates the ARM compiler key as HID `1011:0022`, bus description `mE Dongle mC ARM`. Leave the key on Windows. See **Software Activation** in the installed `mikroc_PRO_ARM.chm` and **Help → License Activation** in the IDE for license status.
 
-The classic standalone compiler reported `error[340]` for the source path even though Windows could read the file. Tests with a drive-letter working directory, absolute and relative inputs, vendor search paths, and a short path did not produce a HEX image. A native mikroC flash or debug session remains unverified. The installed NECTO compiler package at the time of testing was GCC for ARM. The NECTO database also lists **mikroC AI for ARM**. If that package is available, try it in a NECTO project with the F746ZG card and preserve the compiler log and symbol output. The legacy ARM install, the NECTO compiler package, and the IDE plugin are separate resources.
+```bash
+source tools/bench-env.sh
+make mikroc
+tools/simulate.sh mikroc
+tools/simulate.sh mikroc gpio
+tools/verify-bench.sh mikroc
+```
 
-Windows enumerates the attached ARM compiler key as the HID device `1011:0022` with bus description `mE Dongle mC ARM`. Keep the license dongle on Windows along with the ST-LINK. The local CHM's **Software Activation** topic describes automatic USB-dongle licensing. **Help → License Activation** in the vendor IDE is the place to confirm that the IDE recognizes the key. Opening this legacy IDE from an unelevated WSL-launched Windows process requires a normal Windows UAC approval. The last elevated launch was canceled before opening the staged project. USB enumeration confirms the key is present. The classic compiler's source-file error is a separate unresolved build observation.
+The successful IDE build uses **Open Project** (`Ctrl+Shift+O`) and **Build** (`Ctrl+F9`) in `mikroC PRO for ARM/mikroC Pro ARM.exe`. Approve the normal Windows UAC prompt when launching it from WSL. Open the staged `.mcpar` on a Windows drive. The IDE writes the compiler invocation to `hello.log` beside the project. Preserve this line when changing the target's settings or libraries.
 
-The GCC/CMSIS source check builds the same `hello.c` with its vendor register names mapped to CMSIS lvalues. This image passed Renode and the full physical SWD checks. Use `make mikroc-source-check`, `tools/simulate.sh mikroc-source-check`, and `tools/verify-bench.sh mikroc-source-check` to reproduce it. The native `make mikroc` target continues to call mikroC's own compiler.
+The first standalone command reported `error[340]` for a source file that Windows could read. The working headless build replays the IDE's raw argument string through Windows `ProcessStartInfo` with a drive-letter working directory. It passes `hello.c` as a project-relative input, preserves the trailing backslashes on `-SP` and `-IP` directories, and lists the `Uses\ST M7` libraries explicitly. [Windows invocation](../tools/build-mikroc.ps1)
 
-The programmer list on this bench showed ST-LINK V2. CODEGRIP and classic mikroProg software are installed for future probe validation.
+Each attempt stages CRLF copies under `$UNI_WINDOWS_ROOT/.uni-clicker-lab-cache/mikroc/run.*`. The wrapper requires fresh native outputs because `mikroCARM.exe` can return zero after an error. Successful runs copy the BIN, HEX, ASM, LST, DBG and `compiler.log` to `build/mikroc/`. The WSL build ran with no UAC prompt and its HEX matched the elevated IDE's output byte for byte.
+
+`hello.elf` wraps the native flash bytes and uses the vendor listing to map GDB source lines and symbols. The build checks the BIN against the HEX and the listing opcodes, then checks the ELF's flash bytes again. Use `hello.dbg` with the vendor IDE. GDB has the source line table, routine labels, and the two counter addresses. Full C variable type information and frame unwinding are outside that listing-derived data.
+
+```bash
+# Start OpenOCD in a separate terminal after flashing.
+build/cli/debug/uni-cli debug mikroc
+```
+
+```gdb
+monitor reset halt
+maintenance flush register-cache
+x/3i $pc
+hbreak hello.c:32
+continue
+stepi
+info line *$pc
+watch -l *(unsigned int *)&uni_heartbeat
+continue
+```
+
+The vendor reset vector enters `main` at `0x080002c8` with MSP `0x2004fffc`. The first instruction adjusts SP by four bytes before calling the startup helpers. `mikroc_app_entry` is the first listed source address after the startup calls, `0x080002d2` in the tested build. The Rust CLI accepts the native image's word-aligned reset MSP. Use the listing and ELF from the current build when setting breakpoints or reading counters. [Physical and simulator results](verification.md)
+
+The GCC/CMSIS source check maps the same C file's vendor register names to CMSIS lvalues. Use `make mikroc-source-check`, `tools/simulate.sh mikroc-source-check`, and `tools/verify-bench.sh mikroc-source-check` to reproduce that independent build. NECTO's database also lists **mikroC AI for ARM**. The local compiler package used by NECTO was GCC for ARM.
+
+The native image was flashed and debugged through the detected ST-LINK V2. The installed CODEGRIP and classic mikroProg utilities remain available for a separate probe check.

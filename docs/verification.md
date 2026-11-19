@@ -53,8 +53,23 @@ The Windows NECTO GCC image was byte-identical to the WSL GCC image. The NECTO S
 
 Renode's Rust GPIO scenario observed high, low, high at the three specified virtual times. Its trace scenario captured instruction and UART activity, and the GDB scenario stepped from the Cortex-M reset path to the Rust entry source. See [Renode usage](renode.md).
 
-The classic mikroC compiler produced no HEX because it reported source-file error 340. The project, staging script, tested paths and remaining native-tool dependency are recorded in [Mikroe notes](mikroe.md). Reference framework and runtime projects have their own verification status in the [framework guide](frameworks.md).
+## Native mikroC PRO for ARM
 
-The separately named `mikroc-source-check` profile builds the exact legacy application source with a GCC/CMSIS adapter. Its 812-byte image passed flash readback, reset PC `0x080002b4`, source stepping, PD7 watchpoints, and USART6 byte counts `33, 33, 66`. Renode matched both greetings. Windows identified the ARM license dongle by its bus description. The native compiler and its legacy IDE still need a successful vendor build.
+The elevated Windows IDE built the staged project with the ARM license dongle attached. Replaying the IDE's raw command through PowerShell produced identical native HEX and BIN from WSL. This resolved the earlier standalone source-file error 340. [Mikroe reproduction notes](mikroe.md)
+
+| Check | Observed result |
+| --- | --- |
+| Flash and separate full-image readback | 1,024 bytes at `0x08000000`, SHA-256 `7c841aaa2e4ba5355ef156bf43e3d4bbfe96f7cda8ebebc957acb2b6af4dce38` |
+| Reset vector and initial MSP | `0x080002c9` and `0x2004fffc`, actual reset PC `0x080002c8` |
+| Hardware source step | `hello.c:32` at `0x080002d2` to `hello.c:34` at `0x080002d6`, matched to the native listing |
+| Hardware watchpoints | PD7 `1, 0, 1`, TX byte counts `33, 33, 66`, USART6 BRR `0x8b`, zero CFSR and HFSR |
+| Running after GDB detached | Hot-plug reads showed heartbeat `154 → 156` and TX byte count `2574 → 2607` |
+| Renode | Two exact CRLF greetings, PD7 high/low/high, reset instruction trace, and the `hello.c:32` to `hello.c:34` GDB step |
+
+The native mikroC image was left running on the board. The physical UART check covered USART6 configuration and transmit completion via SWD. Renode captured the UART bytes. The separately named `mikroc-source-check` profile builds the same application with a GCC/CMSIS adapter. Its 812-byte image also passed flash readback, source stepping, PD7 watchpoints, and Renode UART. Its reset PC was `0x080002b4`.
+
+## Reference framework tests
 
 The RIOT Nucleo F746ZG example produced a cross-compiled ELF at upstream revision `2e1ced49`. The Nucleo port's board LED and console mapping apply to that artifact.
+
+See the remaining reference framework and runtime projects in the [framework guide](frameworks.md).

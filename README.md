@@ -11,7 +11,7 @@ Hello World firmware and framework ports for the Mikroe UNI Clicker with the SiB
 | `zig` | Zig and MicroZig STM32F746ZG port | [Zig example](examples/zig/) |
 | `necto`, `necto-windows` | Installed mikroSDK and Arm GCC | [NECTO example](examples/necto/) |
 | `freertos`, `threadx`, `libopencm3` | Upstream Cortex-M7 kernels and peripheral library | [Framework projects](examples/frameworks/) |
-| `mikroc` | Classic mikroC PRO for ARM project and separate GCC/CMSIS source check | [mikroC example](examples/mikroc/) |
+| `mikroc`, `mikroc-source-check` | Classic mikroC PRO for ARM and an independent GCC/CMSIS build | [mikroC example](examples/mikroc/) |
 
 ## Build
 

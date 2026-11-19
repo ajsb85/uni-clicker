@@ -6,21 +6,30 @@ stage=${UNI_WINDOWS_ROOT:?Set UNI_WINDOWS_ROOT}/.uni-clicker-lab-cache/mikroc
 mkdir -p "$stage" build/mikroc
 work=$(mktemp -d "$stage/run.XXXXXX")
 win_work=$(wslpath -w "$work")
-win_compiler=$(wslpath -w "$root")
 for input in hello.c hello.mcpar; do
-    sed 's/$/\r/' "examples/mikroc/$input" > "$work/$input"
+    sed 's/\r$//;s/$/\r/' "examples/mikroc/$input" > "$work/$input"
 done
-sed 's/$/\r/' > "$work/compile.cmd" <<SCRIPT
-@echo off
-cd /d "$win_work"
-"$win_compiler\mikroCARM.exe" -MSF -DBG -pSTM32F746ZG -Y -O11111110 -fo16 -BIN -N"$win_work\hello.mcpar" -SP"$win_compiler\Defs" -SP"$win_compiler\Uses" -SP"$win_work" "$win_work\hello.c"
-SCRIPT
-(cd "$work" && timeout 60s cmd.exe /d /c compile.cmd) > "$work/compiler.log" 2>&1
-cp "$work/compiler.log" build/mikroc/compiler.log
-if [[ ! -s "$work/hello.hex" ]]; then
-    cat build/mikroc/compiler.log >&2
-    echo "mikroC emitted no HEX image. Compiler run: $work" >&2
+cp tools/build-mikroc.ps1 "$work/compile.ps1"
+if ! (cd "$work" && timeout 60s powershell.exe -NoProfile -ExecutionPolicy Bypass \
+    -File compile.ps1 -CompilerRoot "$(wslpath -w "$root")" -ProjectRoot "$win_work") \
+    > "$work/compiler.log" 2>&1; then
+    cat "$work/compiler.log" >&2
+    printf 'mikroC compiler run %s\n' "$work" >&2
     exit 1
 fi
-cp "$work/hello.hex" build/mikroc/hello.hex
-arm-none-eabi-objcopy -I ihex -O binary build/mikroc/hello.hex build/mikroc/hello.bin
+for artifact in hello.hex hello.bin hello.lst hello.dbg hello.asm; do
+    if [[ ! -s "$work/$artifact" ]]; then
+        cat "$work/compiler.log" >&2
+        printf 'mikroC emitted no %s. Compiler run %s\n' "$artifact" "$work" >&2
+        exit 1
+    fi
+done
+
+if ! python3 tools/mikroc-debug-elf.py "$work"; then
+    printf 'Unable to package the native output. Compiler run %s\n' "$work" >&2
+    exit 1
+fi
+exec 9>build/mikroc/.publish.lock
+flock 9
+cp "$work"/hello.{hex,bin,elf,lst,dbg,asm} "$work/compiler.log" build/mikroc/
+printf 'Native mikroC build and listing-derived debug ELF in build/mikroc\n'

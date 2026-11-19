@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 usage() {
-    echo 'Usage: tools/simulate.sh {stm32cube|arduino|rust|swift|zig|necto|necto-windows|mikroc-source-check|freertos|threadx|libopencm3} [smoke|gpio|trace|gdb]' >&2
+    echo 'Usage: tools/simulate.sh {stm32cube|arduino|rust|swift|zig|necto|necto-windows|mikroc|mikroc-source-check|freertos|threadx|libopencm3} [smoke|gpio|trace|gdb]' >&2
     exit 2
 }
 case "${1:-}" in
@@ -13,7 +13,7 @@ case "${1:-}" in
     swift) language='Embedded Swift'; artifact=hello.elf ;;
     zig) language=Zig; artifact=hello.elf ;;
     necto|necto-windows) language=NECTO; artifact=hello.elf ;;
-    mikroc-source-check) language=mikroC; artifact=hello.elf ;;
+    mikroc|mikroc-source-check) language=mikroC; artifact=hello.elf ;;
     freertos) language=FreeRTOS; artifact=hello.elf ;;
     threadx) language=ThreadX; artifact=hello.elf ;;
     libopencm3) language=libopencm3; artifact=hello.elf ;;
