@@ -1,0 +1,13 @@
+[package]
+name = "uni-rust-hello"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+cortex-m = "0.7.7"
+cortex-m-rt = "0.7.5"
+
+[profile.release]
+debug = 2
+opt-level = "s"
