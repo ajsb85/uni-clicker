@@ -59,11 +59,14 @@ for edge, banners in ((1, 1), (2, 1), (3, 2)):
     expect("PC6/PC7 AF8", (word(0x40020820) >> 24) & 0xff, 0x88)
     expect("USART6 clock enable", (word(0x40023844) >> 5) & 1, 1)
     expect("USART6 enable, TX and RX", word(0x40011400) & 0x0d, 0x0d)
-    expect("USART6 transmit complete", word(0x4001141c) & 0x40, 0x40)
+    if value("$uni_buffered_uart"):
+        expect("USART6 completion interrupt serviced", word(0x40011400) & 0x40, 0)
+    else:
+        expect("USART6 transmit complete", word(0x4001141c) & 0x40, 0x40)
     expect("USART6 TX byte counter", word(tx_bytes), banners * banner_size)
     check_faults()
     print(f"Edge {edge}: PD7={edge & 1}, TX bytes={banners * banner_size}, CFSR=0, HFSR=0")
-expect("USART6 divisor for 16 MHz HSI at 115200 baud", word(0x4001140c), 139)
+expect("USART6 divisor for 115200 baud", word(0x4001140c), value("$uni_expected_brr"))
 print(f"USART6 BRR {word(0x4001140c):#x}, VTOR {word(0xe000ed08):#010x}")
 gdb.execute("bt 4")
 gdb.execute("delete breakpoints")

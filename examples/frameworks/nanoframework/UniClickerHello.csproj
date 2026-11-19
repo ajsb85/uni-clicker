@@ -1,0 +1,10 @@
+<Project Sdk="nanoFramework.NET.Sdk/1.0.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netnano1.0</TargetFramework>
+    <GenerateManifests>false</GenerateManifests>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="nanoFramework.CoreLibrary" Version="2.0.0-preview.67" />
+  </ItemGroup>
+</Project>

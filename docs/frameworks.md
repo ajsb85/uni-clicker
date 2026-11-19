@@ -5,17 +5,17 @@ The examples use the STM32F746ZG family and a greeting as the first observable o
 | Framework or runtime | Application | Build or integration target | Bench status |
 | --- | --- | --- | --- |
 | STM32CubeF7 | [HAL/CMSIS hello](../examples/stm32cube/) | `make stm32cube` | Renode and physical SWD passed |
-| Zephyr | [Application and board overlay](../examples/frameworks/zephyr/) | `nucleo_f746zg` with PC6/PC7 and PD7 remap | Source and upstream target checked |
+| Zephyr | [Application and board overlay](../examples/frameworks/zephyr/) | `make zephyr` | Renode and physical SWD passed |
 | FreeRTOS | [Static task](../examples/frameworks/freertos/) | `make freertos` | Renode and physical SWD passed |
 | Eclipse ThreadX | [Static thread and Cortex-M7 setup](../examples/frameworks/threadx/) | `make threadx` | Renode and physical SWD passed |
 | Arduino STM32duino | [Sketch](../examples/arduino/HelloUni/) | `make arduino` | Renode and physical SWD passed |
-| Apache NuttX | [NSH application](../examples/frameworks/nuttx/) | `stm32f746g-disco:nsh` reference port | Host greeting and upstream target checked |
-| RIOT | [Application](../examples/frameworks/riot/) | `nucleo-f746zg` reference port | Cross-build, native64 run, first Renode banner |
-| ChibiOS | [RT application](../examples/frameworks/chibios/) | `RT-STM32F746ZG-NUCLEO144` with USART6 enabled | Source and upstream target checked |
+| Apache NuttX | [Startup greeting](../examples/frameworks/nuttx/) | `make nuttx` | Renode greeting, flash and physical source stepping |
+| RIOT | [Application and UNI Clicker board](../examples/frameworks/riot/) | `make riot` | Renode and physical SWD passed |
+| ChibiOS | [RT application](../examples/frameworks/chibios/) | `make chibios` | Renode and physical SWD passed |
 | libopencm3 | [Bare-metal application](../examples/frameworks/libopencm3/) | `make libopencm3` | Renode and physical SWD passed |
-| Mbed OS | [CMake C++ application](../examples/frameworks/mbed-os/) | `NUCLEO_F746ZG`, archived 6.x toolchain | Source and upstream target checked |
-| MicroPython | [Python application and board staging](../examples/frameworks/micropython/) | STM32 port with `NUCLEO_F746ZG` USART6 remap | Staging tested against upstream board header |
-| .NET nanoFramework | [Managed project](../examples/frameworks/nanoframework/) | Compatible nanoCLR and Windows project system | Source and project format checked |
+| Mbed OS | [CMake C++ application](../examples/frameworks/mbed-os/) | `make mbed-os` | Renode and physical SWD passed |
+| MicroPython | [Frozen Python application](../examples/frameworks/micropython/) | `make micropython` | Renode UART and GPIO, physical flash and VM-to-UART debugger trace |
+| .NET nanoFramework | [Managed project](../examples/frameworks/nanoframework/) | `make nanoframework` | Windows SDK build and repeated POSIX nanoCLR greeting |
 
 ## Verified bench-native builds
 
@@ -36,55 +36,56 @@ The minimal Renode platform runs the scheduler and UART for these applications. 
 
 ## Zephyr
 
-From an initialized Zephyr west workspace with its SDK and modules, run the following. The overlay moves the console to USART6 PC6/PC7, selects HSI, and adds PD7. Review the generated `zephyr.dts` and clocks for additional devices before flashing a new Zephyr revision. The app uses the Zephyr scheduler and GPIO APIs. [Zephyr](https://github.com/zephyrproject-rtos/zephyr)
+The tested standalone build uses Zephyr 4.2.1, the `cmsis`, `cmsis_6`, and `hal_stm32` revisions in its `west.yml`, and GNU Arm Embedded GCC 14.2.1. The bench environment points to the extracted workspace. The overlay selects 16 MHz HSI, disables USART3, assigns USART6 to PC6/PC7 and adds PD7. The app uses Zephyr GPIO, UART and scheduler APIs. Check the generated `zephyr.dts` before changing board configuration. [Zephyr](https://github.com/zephyrproject-rtos/zephyr)
 
 ```bash
-lab=/home/gbast/uni-clicker
-cd "$ZEPHYR_WORKSPACE"
-west build -b nucleo_f746zg "$lab/examples/frameworks/zephyr" -d "$lab/build/zephyr"
+source tools/bench-env.sh
+make zephyr
+tools/simulate.sh zephyr
+tools/verify-bench.sh zephyr
 ```
 
 ## Apache NuttX
 
-Use matching NuttX and NuttX Apps checkouts. Stage the application into a writable Apps checkout as `examples/uni_hello`. Configure `stm32f746g-disco:nsh`, enable `EXAMPLES_UNI_HELLO` under the examples menu, and build from the NuttX root. Run `unihello` at the NSH prompt. The application uses the configured NuttX console. The Discovery BSP needs board clock and console routing work before use on the UNI Clicker. [Apache NuttX](https://github.com/apache/nuttx) · [Apache NuttX Apps](https://github.com/apache/nuttx-apps)
+Use matching NuttX and NuttX Apps `12.11.0` in a dedicated writable workspace. `make nuttx` stages the app as `examples/uni_hello`, configures the Nucleo F746ZG NSH base, then selects `unihello_main` as the startup task. It adjusts the scratch BSP to use the HSI-fed 216 MHz PLL and USART6 PC6/PC7. A regular NSH build can also run `unihello` as a built-in. The bench uses `kconfig-frontends-nox` extracted to `.cache/kconfig-frontends`. [Apache NuttX](https://github.com/apache/nuttx) · [Apache NuttX Apps](https://github.com/apache/nuttx-apps)
 
 ```bash
-lab=/home/gbast/uni-clicker
-mkdir -p "$NUTTX_APPS/examples/uni_hello"
-cp "$lab"/examples/frameworks/nuttx/{Kconfig,Make.defs,Makefile,unihello_main.c} \
-   "$NUTTX_APPS/examples/uni_hello/"
-cd "$NUTTX"
-tools/configure.sh -a "$NUTTX_APPS" stm32f746g-disco:nsh
-make menuconfig
-make -j4
+source tools/bench-env.sh
+make nuttx
+tools/simulate.sh nuttx
 ```
 
 ## RIOT
 
-`make -C examples/frameworks/riot RIOTBASE="$RIOT" BOARD=nucleo-f746zg` builds against the official F746ZG Nucleo port. The app uses `ztimer_msec`, standard output, and the board LED. The ELF built at revision `2e1ced49` with GNU Arm GCC 14.2.1 using the local checkout under `.cache/vendor/RIOT`. The `native64` build emitted repeated greetings and LED events when run directly. The Nucleo ELF emitted its first greeting on USART3 in the full STM32F746 Renode model. Later delays exercised LPTIM1 registers that the model lacks, so the simulation establishes startup and first UART output. Adapt the RIOT BSP for USART6 and PD7 on the UNI Clicker. [RIOT](https://github.com/RIOT-OS/RIOT)
+`make riot` uses the external `uni-clicker-f746zg` board at RIOT revision `2e1ced49`. It uses HSI, PD7, USART6 and the standard `ztimer_msec` API with TIM2. The original Nucleo reference used USART3 and LPTIM1. The new board gives Renode repeatable timer interrupts and the same UART and GPIO as the hardware. Add `.cache/vendor/RIOT` as a GDB source directory when stepping into RIOT kernel files. [RIOT](https://github.com/RIOT-OS/RIOT)
 
 ## ChibiOS
 
-Use a scratch checkout of `demos/STM32/RT-STM32F746ZG-NUCLEO144`. Replace that demo's `main.c` with [this application's main](../examples/frameworks/chibios/main.c), enable `HAL_USE_SERIAL` and `STM32_SERIAL_USE_USART6` in the demo configuration, and run `make -j4` in the demo directory with GNU Arm tools. The source configures PC6/PC7 AF8 and PD7. Review the demo clock source for the SiBRAIN card when porting it. [ChibiOS](https://github.com/ChibiOS/ChibiOS)
+`make chibios` stages the RT Nucleo F746ZG demo from stable 21.11 revision `e209b17c`, selects HSI and SysTick, and uses a minimal board initializer for the UNI Clicker. The ChibiOS serial driver clears the USART transmit-complete flag in its interrupt handler. The application waits for `CHN_TRANSMISSION_END` before updating its counter. The reset code executes from the F746 ITCM flash alias `0x00200000`. CubeProgrammer still writes the physical flash at `0x08000000`. [ChibiOS](https://github.com/ChibiOS/ChibiOS)
 
 ## Mbed OS
 
-Use the archived Mbed OS 6.x `NUCLEO_F746ZG` target and its matching GCC_ARM version. Stage the app or place the matching Mbed checkout under the app as `mbed-os/`. From the app run `mbed-tools configure -m NUCLEO_F746ZG -t GCC_ARM -o build`, then `cmake -S . -B build -G Ninja -DMBED_TARGET=NUCLEO_F746ZG -DMBED_TOOLCHAIN=GCC_ARM` and `cmake --build build`. Set `MBED_PATH` if the checkout is elsewhere. The app uses `BufferedSerial`, a GPIO and the RTOS sleep API. [Mbed OS](https://github.com/ARMmbed/mbed-os)
+`make mbed-os` builds archived Mbed OS 6.17.0 using the `NUCLEO_F746ZG` target, GNU Arm GCC 14.2.1 and the `mbed-tools` installed alongside `FRAMEWORK_PYTHON`. The app config selects the HSI-fed PLL and the TIM5 microsecond ticker for tickless RTOS sleep. The original LPTIM1 clock path stalled in the Renode model. The example uses `BufferedSerial`, PD7 and the CMSIS-RTX sleep API. [Mbed OS](https://github.com/ARMmbed/mbed-os)
 
 ## MicroPython
 
-Stage a new STM32 board directory outside the upstream checkout. The helper verifies and replaces the USART6 pin assignments in the F746ZG Nucleo header. Build the interpreter using MicroPython's documented STM32 prerequisites, including `mpy-cross` and required submodules. Once an appropriate STM32 port is running, deploy [main.py](../examples/frameworks/micropython/main.py) to its filesystem with `mpremote` or the board's storage interface. The application starts USART6 and drives PD7. Before flashing on SiBRAIN hardware, verify the cloned port's clock setup, storage regions and REPL transport. [MicroPython](https://github.com/micropython/micropython)
+`make micropython` builds a native `mpy-cross` and a MicroPython 1.25.0 STM32 interpreter with the app frozen into it. The stage helper selects HSI, routes USART6 to PC6/PC7, and adds PD7 to the generated board pin table. The frozen profile disables USB, Ethernet, the internal flash filesystem and the Nucleo PC13 boot switch. The inherited switch stalled the physical board in `boardctrl.c` until it was disabled. Use the Intel HEX from `build/micropython/firmware/` for the split STM32 flash layout. The vectors are at `0x08000000` and text starts at `0x08020000`. [MicroPython](https://github.com/micropython/micropython)
 
 ```bash
-lab=/home/gbast/uni-clicker
-board="$lab/.cache/micropython/UNI_CLICKER_F746ZG"
-mkdir -p "$(dirname "$board")"
-python3 "$lab/examples/frameworks/micropython/stage-board.py" "$MICROPYTHON" "$board"
-make -C "$MICROPYTHON/mpy-cross" -j4
-make -C "$MICROPYTHON/ports/stm32" BOARD=UNI_CLICKER_F746ZG BOARD_DIR="$board" \
-    BUILD="$lab/build/micropython" -j4
+source tools/bench-env.sh
+make micropython
+tools/simulate.sh micropython
 ```
 
 ## .NET nanoFramework
 
-Open [UniClickerHello.nfproj](../examples/frameworks/nanoframework/UniClickerHello.nfproj) in Windows Visual Studio with the nanoFramework extension or use its MSBuild environment. In the project directory run `nuget restore packages.config -PackagesDirectory packages` and `MSBuild UniClickerHello.nfproj`. Deploy to a compatible nanoCLR device and read the Visual Studio debug output. The upstream interpreter provides a ChibiOS STM32F769I Discovery target. A F746ZG UNI Clicker CLR needs a separate runtime port and flash layout before the managed app can run on this board. [nanoFramework interpreter](https://github.com/nanoframework/nf-interpreter) · [nanoFramework samples](https://github.com/nanoframework/Samples)
+`make nanoframework` builds the SDK-style project with Windows `dotnet.exe` and exports `mscorlib.pe` and `UniClickerHello.pe` to `build/nanoframework/`. The legacy `.nfproj` can also be opened in Visual Studio with the nanoFramework extension. The SDK-style build uses `nanoFramework.NET.Sdk` 1.0.0 and CoreLibrary `2.0.0-preview.67`. Use the matching interpreter revision `e903edbe5258e8c6887c91c448ea5a0305e7040f` for the verified POSIX run. Its `NFMRK2` loader and native contract hash `0x532e6934` match the package. A newer runtime rejected the string table or native contract. [nanoFramework interpreter](https://github.com/nanoframework/nf-interpreter)
+
+```bash
+source tools/bench-env.sh
+make nanoframework
+clr=.cache/sdk-native/work/nano-posix-e903edb/bin/nanoFramework.nanoCLR.test
+timeout 5s stdbuf -oL "$clr" build/nanoframework/mscorlib.pe build/nanoframework/UniClickerHello.pe
+```
+
+The command runs the repeating greeting for five seconds on the host. The CLR can be rebuilt from that revision with `cmake -S targets/posix -B build/posix -G Ninja -DNANO_POSIX_ENABLE_SMOKE=ON` followed by `cmake --build build/posix`. The matching community snapshot `21b7f0bb` provides `ChibiOS/ST_NUCLEO144_F746ZG`. Its linker lays out the booter at `0x08000000`, the CLR at `0x08010000` and deployment at `0x080c0000`. [nanoFramework community targets](https://github.com/nanoframework/nf-Community-Targets)

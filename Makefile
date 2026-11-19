@@ -12,6 +12,8 @@ NECTO_SDK_ROOT ?=
 FREERTOS_ROOT ?=
 THREADX_ROOT ?=
 OPENCM3 ?=
+PLATFORMIO ?= pio
+PIO_TARGETS := pio-arduino pio-stm32cube pio-cmsis pio-libopencm3 pio-zephyr
 ARDUINO_CLI ?= arduino-cli
 ARDUINO_FQBN := STMicroelectronics:stm32:GenF7:pnum=GENERIC_F746ZGTX,xserial=none,usb=none
 ARDUINO_TARGET := build/arduino/HelloUni.ino
@@ -25,9 +27,9 @@ HAL_SRC := $(addprefix $(HAL)/Src/stm32f7xx_hal, .c _cortex.c _gpio.c _uart.c _r
 CPU := -mcpu=cortex-m7 -mthumb
 CFLAGS := -g3 -Os -ffunction-sections -fdata-sections -Wall -Wextra -DSTM32F746xx -I$(CMSIS)/Include -I$(DEVICE)/Include
 LINK = -Tfirmware/stm32f746.ld -Wl,--gc-sections,-z,noexecstack,-Map,$(@:.elf=.map)
-export TMPDIR := $(CURDIR)/.cache/tmp
+export TMPDIR ?= $(CURDIR)/.cache/tmp
 
-.PHONY: all stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check freertos threadx libopencm3 cli deps-stm32cube check-sdk check-microzig
+.PHONY: all stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check freertos threadx libopencm3 riot chibios zephyr nuttx micropython mbed-os nanoframework platformio $(PIO_TARGETS) cli deps-stm32cube check-sdk check-microzig
 all: stm32cube arduino rust swift cli
 stm32cube: build/stm32cube/hello.bin build/stm32cube/hello.hex
 arduino: $(ARDUINO_TARGET).bin $(ARDUINO_TARGET).hex
@@ -39,6 +41,36 @@ necto-windows: build/necto-windows/hello.bin build/necto-windows/hello.hex
 freertos: build/freertos/hello.bin build/freertos/hello.hex
 threadx: build/threadx/hello.bin build/threadx/hello.hex
 libopencm3: build/libopencm3/hello.bin build/libopencm3/hello.hex
+riot: | .cache/tmp
+	mkdir -p build/riot
+	$(MAKE) -C examples/frameworks/riot BINDIRBASE="$(CURDIR)/build/riot/objects"
+	cp build/riot/objects/uni-clicker-f746zg/uni_clicker_hello.elf build/riot/hello.elf
+	$(OBJCOPY) -O binary build/riot/hello.elf build/riot/hello.bin
+	$(OBJCOPY) -O ihex build/riot/hello.elf build/riot/hello.hex
+chibios: | .cache/tmp
+	bash tools/build-chibios.sh
+	$(OBJCOPY) -O binary build/chibios/hello.elf build/chibios/hello.bin
+	$(OBJCOPY) -O ihex build/chibios/hello.elf build/chibios/hello.hex
+zephyr: | .cache/tmp
+	bash tools/build-zephyr.sh
+	$(OBJCOPY) -O binary build/zephyr/hello.elf build/zephyr/hello.bin
+	$(OBJCOPY) -O ihex build/zephyr/hello.elf build/zephyr/hello.hex
+micropython: | .cache/tmp
+	bash tools/build-micropython.sh
+mbed-os: | .cache/tmp
+	bash tools/build-mbed-os.sh
+	$(OBJCOPY) -O binary build/mbed-os/hello.elf build/mbed-os/hello.bin
+	$(OBJCOPY) -O ihex build/mbed-os/hello.elf build/mbed-os/hello.hex
+nuttx: | .cache/tmp
+	bash tools/build-nuttx.sh
+	$(OBJCOPY) -O binary build/nuttx/hello.elf build/nuttx/hello.bin
+	$(OBJCOPY) -O ihex build/nuttx/hello.elf build/nuttx/hello.hex
+nanoframework: | .cache/tmp
+	bash tools/build-nanoframework.sh
+platformio: | .cache/tmp
+	"$(PLATFORMIO)" run -d examples/platformio
+$(PIO_TARGETS): pio-%: | .cache/tmp
+	"$(PLATFORMIO)" run -d examples/platformio -e "$*"
 mikroc-source-check: build/mikroc-source-check/hello.bin build/mikroc-source-check/hello.hex
 mikroc:
 	tools/build-mikroc.sh

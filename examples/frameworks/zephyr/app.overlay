@@ -1,5 +1,4 @@
 #include <zephyr/dt-bindings/gpio/gpio.h>
-#include <zephyr/dt-bindings/pinctrl/stm32-pinctrl.h>
 
 / {
     chosen {
@@ -16,18 +15,12 @@
     };
 };
 
-&pinctrl {
-    uni_usart6: uni_usart6 {
-        group1 {
-            pinmux = <STM32_PINMUX('C', 6, AF8)>,
-                     <STM32_PINMUX('C', 7, AF8)>;
-            bias-pull-up;
-        };
-    };
+&usart3 {
+    status = "disabled";
 };
 
 &usart6 {
-    pinctrl-0 = <&uni_usart6>;
+    pinctrl-0 = <&usart6_tx_pc6 &usart6_rx_pc7>;
     pinctrl-names = "default";
     current-speed = <115200>;
     status = "okay";
@@ -35,6 +28,14 @@
 
 &clk_hsi {
     status = "okay";
+};
+
+&clk_hse {
+    status = "disabled";
+};
+
+&pll {
+    status = "disabled";
 };
 
 &rcc {

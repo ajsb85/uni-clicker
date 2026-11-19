@@ -46,6 +46,8 @@ Quit Renode at the monitor when done. Use port 3333 for the real OpenOCD target 
 
 The native mikroC profile uses the ELF that `make mikroc` creates from the vendor BIN and listing. Its flash bytes match the vendor HEX. In `tools/simulate.sh mikroc gdb`, connect GDB to port 3334 with `build/mikroc/hello.elf` and set `break hello.c:32`. `continue` stops after the compiler's startup calls. `stepi` advances to line 34 in the tested build. GDB printed an SP alias warning while stepping in Renode and still resolved both addresses. The same recipe's `smoke`, `gpio`, and `trace` modes check the two greetings, the LED state, and the native startup opcodes. [Native build and verification details](mikroe.md)
 
+The model maps flash through the AXI address `0x08000000` and the ITCM alias `0x00200000`. RIOT uses a modeled TIM2 compare interrupt. The PLL model configures 216 MHz SysTick, USART6 at 108 MHz, and TIM5 at 108 MHz for Mbed OS, MicroPython and NuttX. `tools/simulate.sh nuttx` expects one startup line. The other runtime profiles expect two greetings and support the timed PD7 check. [Framework configuration](frameworks.md)
+
 ## Add a peripheral or interactive test
 
 The workspace includes the Renode testing APIs at `$UNI_WINDOWS_ROOT/renode/renode-docs/source/basic/renode-testing-api.md`. In a Robot test, use `Create Terminal Tester    sysbus.usart6` before `Start Emulation`. Use `Wait For Line On Uart` for a greeting or prompt and `Write Line To Uart` for an input-driven application. A UART receive test needs an app that actually reads USART6. For LED assertions, the model's LED is `sysbus.gpioD.ledC`. Use `Assert Led State` or `Assert Led Is Blinking` after creating an LED tester.

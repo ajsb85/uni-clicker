@@ -1,3 +1,8 @@
 {
-  "target_overrides": {}
+  "target_overrides": {
+    "NUCLEO_F746ZG": {
+      "target.clock_source": "USE_PLL_HSI",
+      "target.tickless-from-us-ticker": true
+    }
+  }
 }

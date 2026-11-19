@@ -68,8 +68,35 @@ The elevated Windows IDE built the staged project with the ARM license dongle at
 
 The native mikroC image was left running on the board. The physical UART check covered USART6 configuration and transmit completion via SWD. Renode captured the UART bytes. The separately named `mikroc-source-check` profile builds the same application with a GCC/CMSIS adapter. Its 812-byte image also passed flash readback, source stepping, PD7 watchpoints, and Renode UART. Its reset PC was `0x080002b4`.
 
-## Reference framework tests
+## UNI Clicker framework ports
 
-The RIOT Nucleo F746ZG example produced a cross-compiled ELF at upstream revision `2e1ced49`. The Nucleo port's board LED and console mapping apply to that artifact.
+The following images passed CubeProgrammer flash verification, source stepping, three hardware PD7 watchpoints, and the exact Renode UART and timed GPIO checks. All reported zero CFSR and HFSR.
 
-See the remaining reference framework and runtime projects in the [framework guide](frameworks.md).
+| Profile | BIN bytes | Reset PC | USART6 divisor | TX byte count at edges 1, 2, 3 |
+| --- | ---: | --- | --- | --- |
+| Zephyr | 17,848 | `0x08000954` | `0x8b` | 33, 33, 66 |
+| RIOT | 10,356 | `0x080007e4` | `0x8a` | 31, 31, 62 |
+| ChibiOS | 6,128 | `0x002002d8` | `0x8b` | 34, 34, 68 |
+| Mbed OS | 41,568 | `0x08004934` | `0x3aa` | 34, 34, 68 |
+
+RIOT truncates the divisor at 16 MHz. The ChibiOS driver clears TC and signals `CHN_TRANSMISSION_END` in the UART interrupt. The application increments its byte counter after that event. Mbed OS uses USART6 at 108 MHz and the TIM5 microsecond ticker. [Build and debugger details](frameworks.md)
+
+NuttX flashed and verified a 125,396-byte BIN. GDB reset at `0x0800039c` with MSP `0x20011a4c`, then stopped and stepped at the `puts` line in `unihello_main`. It read PC6 and PC7 in AF8, USART6 BRR `0x3aa`, and zero CFSR and HFSR. Renode captured the one startup greeting exactly.
+
+MicroPython passed HEX verification and reset at `0x0802011c` with MSP `0x2004fff8`. GDB stepped into the frozen `uni_hello.py` startup and inspected 38 bytes containing the complete CRLF greeting inside `uart_tx_data`. The backtrace included the bytecode interpreter and the `machine.UART.write` path. USART6 BRR was `0x3aa`, and CFSR and HFSR were zero. Renode captured both greetings and PD7 high, low, high. The physical board was left running this image after the test.
+
+The .NET nanoFramework managed application built with Windows `dotnet.exe` and printed five greetings in the POSIX runtime pinned at `e903edb`. The compatible `mscorlib.pe` uses `NFMRK2` and native contract hash `0x532e6934`. [Managed build and runtime instructions](frameworks.md)
+
+## PlatformIO 20.0.0 results
+
+All five environments built with PlatformIO Core 6.2.0, passed the PlatformIO `renode` target, and passed physical CubeProgrammer and SWD verification. The hardware checks showed PD7 high, low, high and zero CFSR and HFSR.
+
+| Environment | Reset PC | TX byte count at edges 1, 2, 3 |
+| --- | --- | --- |
+| Arduino | `0x08003970` | 34, 34, 68 |
+| STM32Cube | `0x08001160` | 36, 36, 72 |
+| CMSIS | `0x08000208` | 32, 32, 64 |
+| libopencm3 | `0x0800046c` | 37, 37, 74 |
+| Zephyr | `0x08000f84` | 33, 33, 66 |
+
+The batch files are in `.cache/verification/bench.57p0Ky` and `.cache/verification/bench.p8K6L2`. [PlatformIO reproduction](platformio.md)

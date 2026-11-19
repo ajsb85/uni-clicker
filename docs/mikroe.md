@@ -96,3 +96,9 @@ The vendor reset vector enters `main` at `0x080002c8` with MSP `0x2004fffc`. The
 The GCC/CMSIS source check maps the same C file's vendor register names to CMSIS lvalues. Use `make mikroc-source-check`, `tools/simulate.sh mikroc-source-check`, and `tools/verify-bench.sh mikroc-source-check` to reproduce that independent build. NECTO's database also lists **mikroC AI for ARM**. The local compiler package used by NECTO was GCC for ARM.
 
 The native image was flashed and debugged through the detected ST-LINK V2. The installed CODEGRIP and classic mikroProg utilities remain available for a separate probe check.
+
+## Separate classic mikroProg probe
+
+Windows enumerated the ST-LINK V2 and the HID compiler key during the framework and PlatformIO runs. The compiler key's device description was `mE Dongle mC ARM`. A separate classic mikroProg, CODEGRIP or FTDI probe was absent from the Windows inventory. The physical flash and debugger results here use the ST-LINK V2.
+
+When the classic probe appears, use the local `mikroprog-stm32-manual-v100.pdf` and `mikroProg Suite For ARM/mikroProg Suite for ARM.exe`. For the classic programmer connection, the UNI Clicker switch is SW1 OFF/down. Confirm the probe and MCU in the programmer before writing an image. The existing ST-LINK setup uses SW1 ON/up. [Bench connector and switch details](../AGENT.MD)

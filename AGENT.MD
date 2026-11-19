@@ -16,6 +16,19 @@ The repository is [ajsb85/uni-clicker](https://github.com/ajsb85/uni-clicker). T
 
 Keep source and ordinary builds on the WSL filesystem. Keep capture files, SDK references, package caches, and scratch directories under `.cache/`. The large Windows-backed caches live under `$UNI_WINDOWS_ROOT/.uni-clicker-lab-cache`. Leave `/tmp` out of any command that needs to survive a session. Check `df -h . "$UNI_WINDOWS_ROOT"` before adding a new SDK or interpreter tree.
 
+The WSL root filesystem ran out of allocatable space during the framework builds. A persistent ext4 image in the Windows workspace supplies Linux build storage at `.cache/sdk-native`. It holds extracted SDKs, PlatformIO packages, and build intermediates. The source archives are in the Windows workspace. After a WSL restart, remount the existing image from the project root before sourcing the bench environment in a fresh shell.
+
+```bash
+win=${UNI_WINDOWS_ROOT:-/mnt/c/Users/gbast/dev/uni-clicker}
+mountpoint -q "$PWD/.cache/sdk-native" || wsl.exe -d Ubuntu-24.04 -u root -- \
+  mount -o loop,nosuid,nodev "$win/.uni-clicker-lab-cache/frameworks/linux-sdk-cache.ext4" \
+  "$PWD/.cache/sdk-native"
+source tools/bench-env.sh
+df -h . .cache/sdk-native
+```
+
+The RIOT vendor path and MicroPython build path on this bench link into the mounted cache. The saved Cargo and Zig intermediates are under `frameworks/archived-rust-build` and `frameworks/archived-wsl-builds` in the Windows-backed cache. The Rust and Zig firmware images remain under `build/`.
+
 ## Locate resources
 
 Paths in the right column are relative to `$UNI_WINDOWS_ROOT` unless prefixed with `.cache/` or `/home/gbast/`.
@@ -140,18 +153,20 @@ The native HEX, BIN, ASM, LST, DBG and compiler log are in `build/mikroc/`. The 
 | FreeRTOS | `examples/frameworks/freertos/`, `make freertos` | Flash, SWD, Renode |
 | Eclipse ThreadX | `examples/frameworks/threadx/`, `make threadx` | Flash, SWD, Renode |
 | libopencm3 | `examples/frameworks/libopencm3/`, `make libopencm3` | Flash, SWD, Renode |
-| Zephyr | `examples/frameworks/zephyr/`, Nucleo F746ZG overlay | App and upstream target |
-| Apache NuttX | `examples/frameworks/nuttx/`, NSH app | App and upstream target |
-| RIOT | `examples/frameworks/riot/`, Nucleo F746ZG | Cross-build at `2e1ced49`, native64 run, initial USART3 output in Renode |
-| ChibiOS | `examples/frameworks/chibios/`, RT Nucleo F746ZG | App and upstream target |
-| Mbed OS | `examples/frameworks/mbed-os/`, Nucleo F746ZG | App and upstream target |
-| MicroPython | `examples/frameworks/micropython/`, staged F746ZG UART remap | App and tested board staging |
-| .NET nanoFramework | `examples/frameworks/nanoframework/`, managed project | Source and project format |
+| Zephyr | `examples/frameworks/zephyr/`, `make zephyr` | Flash, SWD, Renode UART and GPIO |
+| Apache NuttX | `examples/frameworks/nuttx/`, `make nuttx` | Exact startup greeting in Renode, flash and SWD source stepping |
+| RIOT | `examples/frameworks/riot/`, `make riot` | Native UNI Clicker board, TIM2, flash, SWD, Renode UART and GPIO |
+| ChibiOS | `examples/frameworks/chibios/`, `make chibios` | Flash, SWD, UART interrupt completion, Renode UART and GPIO |
+| Mbed OS | `examples/frameworks/mbed-os/`, `make mbed-os` | Flash, SWD, Renode UART and GPIO with the TIM5 ticker |
+| MicroPython | `examples/frameworks/micropython/`, `make micropython` | Frozen app, flash, physical bytecode-to-UART trace, Renode UART and GPIO |
+| .NET nanoFramework | `examples/frameworks/nanoframework/`, `make nanoframework` | Native `.pe` files, repeated greetings on the matched POSIX nanoCLR |
 
 See [framework build and port instructions](docs/frameworks.md) before flashing a reference board or interpreter. The verified RTOS kernels are the local NECTO FreeRTOS 11.3.0 and the ThreadX checkout at `$UNI_WINDOWS_ROOT/.uni-clicker-lab-cache/frameworks/threadx` (`b2868c3`). The libopencm3 checkout lives alongside it at `a3977e1`. Use the hard-float Cortex-M7 ABI for its F7 archive. Its framework library must be built before linking the example. Zephyr, NuttX, RIOT, ChibiOS, Mbed OS, MicroPython and nanoFramework retain their own build, runtime and board requirements.
 
+The new source archives live under `$UNI_WINDOWS_ROOT/.uni-clicker-lab-cache/frameworks`. The verified versions are Zephyr 4.2.1 and its pinned modules, NuttX and Apps 12.11.0, ChibiOS stable 21.11 at `e209b17c`, Mbed OS 6.17.0, and MicroPython 1.25.0 with its pinned STM32F7 HAL and CMSIS device headers. The POSIX nanoCLR at `e903edb` matches the CoreLibrary assembly emitted by the pinned .NET SDK. The interpreter's community submodule at `21b7f0bb` includes `ChibiOS/ST_NUCLEO144_F746ZG`. Its stock Arduino and ST-LINK pin assignments need the same board review as other Nucleo builds.
+
 Use `tools/verify-bench.sh zig necto-windows freertos threadx libopencm3` for a serialized hardware run after building those profiles. It retains separate ELF, programmer, server and GDB logs in one `.cache/verification/bench.*` directory. For MicroZig, keep the compiler's local build cache on WSL and the large source packages on the Windows mount. Moving the Zig build cache itself to the Windows filesystem caused executable cache rename failures. The build script remedies the Ubuntu multiarch include path when Zig's native `regz` dependencies need `asm/types.h`.
 
-## Queued PlatformIO work
+## PlatformIO
 
-The PlatformIO references are cloned under `$UNI_WINDOWS_ROOT/platformio/`. The checked-out revisions are `platform-ststm32` at `c419cfe`, `platformio-core` at `d8c2135`, `platformio-docs` at `a6877ce`, and `platformio-vscode-ide` at `3af3881`. The WSL installer environment is `.cache/platformio-venv`. Start the PlatformIO examples after finishing the current MikroE work. Verify the `nucleo_f746zg` board metadata against the physical UNI Clicker pinout before any upload, and reuse the local Renode model and Windows SWD workflow.
+The PlatformIO references are cloned under `$UNI_WINDOWS_ROOT/platformio/`. The checked-out revisions are `platform-ststm32` at `c419cfe`, `platformio-core` at `d8c2135`, `platformio-docs` at `a6877ce`, and `platformio-vscode-ide` at `3af3881`. The WSL installer environment is `.cache/platformio-venv`. Build the projects under `examples/platformio` and use its `renode` target or `uni-cli simulate pio-<framework>`. The Nucleo metadata supplies the STM32F746ZG memory and toolchain configuration. The source uses UNI Clicker pins. Use Windows CubeProgrammer and OpenOCD while Windows owns the ST-LINK. [PlatformIO workflow](docs/platformio.md)

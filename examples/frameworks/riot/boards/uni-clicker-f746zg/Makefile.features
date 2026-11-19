@@ -1,0 +1,4 @@
+CPU = stm32
+CPU_MODEL = stm32f746zg
+
+FEATURES_PROVIDED += periph_timer periph_uart

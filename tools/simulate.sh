@@ -3,9 +3,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 usage() {
-    echo 'Usage: tools/simulate.sh {stm32cube|arduino|rust|swift|zig|necto|necto-windows|mikroc|mikroc-source-check|freertos|threadx|libopencm3} [smoke|gpio|trace|gdb]' >&2
+    echo 'Usage: tools/simulate.sh <profile> [smoke|gpio|trace|gdb]' >&2
     exit 2
 }
+platform=uni-clicker.repl
 case "${1:-}" in
     stm32cube) language=STM32Cube; artifact=hello.elf ;;
     arduino) language=Arduino; artifact=HelloUni.ino.elf ;;
@@ -17,6 +18,13 @@ case "${1:-}" in
     freertos) language=FreeRTOS; artifact=hello.elf ;;
     threadx) language=ThreadX; artifact=hello.elf ;;
     libopencm3) language=libopencm3; artifact=hello.elf ;;
+    riot) language=RIOT; artifact=hello.elf ;;
+    chibios) language=ChibiOS; artifact=hello.elf ;;
+    zephyr) language=Zephyr; artifact=hello.elf ;;
+    cmsis) language=CMSIS; artifact=hello.elf ;;
+    mbed-os) language='Mbed OS'; artifact=hello.elf; platform=uni-clicker-pll.repl ;;
+    micropython) language=MicroPython; artifact=firmware/firmware.elf; platform=uni-clicker-pll.repl ;;
+    nuttx) language=NuttX; artifact=hello.elf; platform=uni-clicker-pll.repl ;;
     *) usage ;;
 esac
 
@@ -26,8 +34,12 @@ case "$mode" in
     *) usage ;;
 esac
 [[ $# -le 2 ]] || usage
+if [[ "$1" == nuttx && "$mode" == gpio ]]; then
+    echo 'The NuttX example prints once during startup.' >&2
+    exit 2
+fi
 
-binary="$PWD/build/$1/$artifact"
+binary="${UNI_SIM_ELF:-$PWD/build/$1/$artifact}"
 if [[ ! -f "$binary" ]]; then
     echo "Run make $1 first." >&2
     exit 1
@@ -37,8 +49,9 @@ mkdir -p "$TMPDIR" .cache/sim
 run=$(mktemp -d "$PWD/.cache/sim/$1.$mode.XXXXXX")
 cat > "$run/run.resc" <<SCRIPT
 mach create "uni-clicker"
-machine LoadPlatformDescription "$PWD/sim/uni-clicker.repl"
+machine LoadPlatformDescription "$PWD/sim/$platform"
 sysbus LoadELF "$binary"
+cpu VectorTableOffset 0x08000000
 usart6 CreateFileBackend "$run/uart.txt"
 SCRIPT
 
@@ -98,7 +111,10 @@ case "$mode" in
         ;;
 esac
 
-printf 'Hello, UNI Clicker from %s!\r\nHello, UNI Clicker from %s!\r\n' "$language" "$language" > "$run/expected.txt"
+printf 'Hello, UNI Clicker from %s!\r\n' "$language" > "$run/expected.txt"
+if [[ "$1" != nuttx ]]; then
+    printf 'Hello, UNI Clicker from %s!\r\n' "$language" >> "$run/expected.txt"
+fi
 if ! cmp -s "$run/expected.txt" "$run/uart.txt"; then
     echo "Unexpected USART6 output. Inspect $run/uart.txt and $run/renode.log." >&2
     exit 1

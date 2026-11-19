@@ -1,0 +1,12 @@
+using "uni-clicker.repl"
+
+nvic:
+    systickFrequency: 216000000
+
+usart6:
+    frequency: 108000000
+
+timer5: Timers.STM32_Timer @ sysbus 0x40000C00
+    frequency: 108000000
+    initialLimit: 0xFFFFFFFF
+    -> nvic@50

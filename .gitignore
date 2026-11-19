@@ -4,6 +4,7 @@
 /examples/zig/zig-pkg/
 /examples/frameworks/riot/bin/
 /examples/frameworks/mbed-os/build/
+/examples/platformio/.pio/
 /examples/frameworks/mbed-os/mbed-os/
 /examples/frameworks/nanoframework/bin/
 /examples/frameworks/nanoframework/obj/

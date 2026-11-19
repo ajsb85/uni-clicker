@@ -8,16 +8,22 @@ use std::process::{Command, ExitCode};
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 const FLASH_BASE: u32 = 0x0800_0000;
+const FLASH_ITCM_ALIAS: u32 = 0x0020_0000;
 const FLASH_SIZE: usize = 1024 * 1024;
 const RAM_BASE: u32 = 0x2000_0000;
 const RAM_TOP: u32 = 0x2005_0000;
 const HELP: &str = "uni-cli <command> [firmware] [endpoint]
-  build <stm32cube|arduino|rust|swift|zig|necto|necto-windows|mikroc|mikroc-source-check|freertos|threadx|libopencm3|all>   Build firmware with Make
+  build <firmware|all>                     Build firmware with Make
   analyze <firmware>                      Inspect vectors, sections, and symbols
   probe                                   Identify the MCU over STM32CubeProgrammer SWD
   flash <firmware>                        Program, verify, and reset the UNI Clicker
   debug <firmware> [localhost:3333]         Open an interactive GDB session
-  verify <firmware> [localhost:3333]        Check reset, entry, and three LED edges in GDB";
+  verify <firmware> [localhost:3333]        Check reset, entry, and three LED edges in GDB
+  simulate <firmware> [smoke|gpio|trace|gdb] Run the firmware in Renode
+
+Profiles: stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check
+          freertos threadx libopencm3 riot chibios zephyr mbed-os
+          pio-arduino pio-stm32cube pio-cmsis pio-libopencm3 pio-zephyr";
 
 #[derive(Clone, Copy)]
 enum Firmware {
@@ -33,6 +39,15 @@ enum Firmware {
     FreeRtos,
     ThreadX,
     LibOpenCm3,
+    Riot,
+    ChibiOs,
+    Zephyr,
+    MbedOs,
+    PioArduino,
+    PioStm32Cube,
+    PioCmsis,
+    PioLibOpenCm3,
+    PioZephyr,
 }
 
 impl Firmware {
@@ -50,6 +65,15 @@ impl Firmware {
             "freertos" => Ok(Self::FreeRtos),
             "threadx" => Ok(Self::ThreadX),
             "libopencm3" => Ok(Self::LibOpenCm3),
+            "riot" => Ok(Self::Riot),
+            "chibios" => Ok(Self::ChibiOs),
+            "zephyr" => Ok(Self::Zephyr),
+            "mbed-os" => Ok(Self::MbedOs),
+            "pio-arduino" => Ok(Self::PioArduino),
+            "pio-stm32cube" => Ok(Self::PioStm32Cube),
+            "pio-cmsis" => Ok(Self::PioCmsis),
+            "pio-libopencm3" => Ok(Self::PioLibOpenCm3),
+            "pio-zephyr" => Ok(Self::PioZephyr),
             _ => Err(format!("unknown firmware {name:?}").into()),
         }
     }
@@ -68,10 +92,25 @@ impl Firmware {
             Self::FreeRtos => "freertos",
             Self::ThreadX => "threadx",
             Self::LibOpenCm3 => "libopencm3",
+            Self::Riot => "riot",
+            Self::ChibiOs => "chibios",
+            Self::Zephyr => "zephyr",
+            Self::MbedOs => "mbed-os",
+            Self::PioArduino => "pio-arduino",
+            Self::PioStm32Cube => "pio-stm32cube",
+            Self::PioCmsis => "pio-cmsis",
+            Self::PioLibOpenCm3 => "pio-libopencm3",
+            Self::PioZephyr => "pio-zephyr",
         }
     }
 
     fn artifact(self, suffix: &str) -> PathBuf {
+        if let Some(profile) = self.name().strip_prefix("pio-") {
+            let build_dir = env::var_os("PLATFORMIO_BUILD_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("examples/platformio/.pio/build"));
+            return build_dir.join(profile).join(format!("firmware.{suffix}"));
+        }
         let basename = match self {
             Self::Arduino => "HelloUni.ino",
             _ => "hello",
@@ -81,7 +120,7 @@ impl Firmware {
 
     fn entry(self) -> &'static str {
         match self {
-            Self::Arduino => "setup",
+            Self::Arduino | Self::PioArduino => "setup",
             Self::Swift => "uni_swift_main",
             Self::Zig => "zig_entry",
             Self::Mikroc => "mikroc_app_entry",
@@ -92,8 +131,8 @@ impl Firmware {
 
     fn banner_size(self) -> usize {
         let language = match self {
-            Self::Stm32Cube => "STM32Cube",
-            Self::Arduino => "Arduino",
+            Self::Stm32Cube | Self::PioStm32Cube => "STM32Cube",
+            Self::Arduino | Self::PioArduino => "Arduino",
             Self::Rust => "Rust",
             Self::Swift => "Embedded Swift",
             Self::Zig => "Zig",
@@ -101,9 +140,22 @@ impl Firmware {
             Self::Mikroc | Self::MikrocSourceCheck => "mikroC",
             Self::FreeRtos => "FreeRTOS",
             Self::ThreadX => "ThreadX",
-            Self::LibOpenCm3 => "libopencm3",
+            Self::LibOpenCm3 | Self::PioLibOpenCm3 => "libopencm3",
+            Self::Riot => "RIOT",
+            Self::ChibiOs => "ChibiOS",
+            Self::Zephyr | Self::PioZephyr => "Zephyr",
+            Self::MbedOs => "Mbed OS",
+            Self::PioCmsis => "CMSIS",
         };
         "Hello, UNI Clicker from !\r\n".len() + language.len()
+    }
+
+    fn uart_divisor(self) -> u16 {
+        match self {
+            Self::Riot => 138,
+            Self::MbedOs => 938,
+            _ => 139,
+        }
     }
 }
 
@@ -122,6 +174,10 @@ impl Image {
         let stack = u32::from_le_bytes(bytes[..4].try_into()?);
         let reset = u32::from_le_bytes(bytes[4..8].try_into()?);
         let reset_address = reset & !1;
+        let image_size = bytes.len() as u32;
+        let reset_in_flash = (FLASH_BASE..FLASH_BASE + image_size).contains(&reset_address);
+        let reset_in_alias = matches!(firmware, Firmware::ChibiOs)
+            && (FLASH_ITCM_ALIAS..FLASH_ITCM_ALIAS + image_size).contains(&reset_address);
         // Native mikroC starts at a word-aligned MSP and aligns it in the first instruction.
         let stack_alignment = if matches!(firmware, Firmware::Mikroc) {
             4
@@ -130,7 +186,7 @@ impl Image {
         };
         if !(RAM_BASE + 8..=RAM_TOP).contains(&stack)
             || stack % stack_alignment != 0
-            || !(FLASH_BASE..FLASH_BASE + bytes.len() as u32).contains(&reset_address)
+            || !(reset_in_flash || reset_in_alias)
             || reset & 1 == 0
         {
             return Err(
@@ -314,6 +370,16 @@ fn debug(firmware: Firmware, endpoint: Option<&str>, verify: bool) -> Result<()>
             .arg(format!("set $uni_expected_vector = {:#x}", image.reset))
             .arg("-ex")
             .arg(format!("set $uni_banner_size = {}", firmware.banner_size()))
+            .arg("-ex")
+            .arg(format!(
+                "set $uni_expected_brr = {}",
+                firmware.uart_divisor()
+            ))
+            .arg("-ex")
+            .arg(format!(
+                "set $uni_buffered_uart = {}",
+                u8::from(matches!(firmware, Firmware::ChibiOs))
+            ))
             .args(["-x", "debug/verify.gdb"]);
     }
     run(&mut command)
@@ -346,6 +412,18 @@ fn execute(args: &[String]) -> Result<()> {
         [cmd] if cmd == "probe" => probe(&tool("CUBE_PROG", "STM32_Programmer_CLI")),
         [cmd, name] if cmd == "analyze" => analyze(Firmware::parse(name)?),
         [cmd, name] if cmd == "flash" => flash(Firmware::parse(name)?),
+        [cmd, name, rest @ ..] if cmd == "simulate" && rest.len() <= 1 => {
+            let firmware = Firmware::parse(name)?;
+            let mut command = Command::new("tools/simulate.sh");
+            if let Some(profile) = firmware.name().strip_prefix("pio-") {
+                command
+                    .arg(profile)
+                    .env("UNI_SIM_ELF", firmware.artifact("elf").canonicalize()?);
+            } else {
+                command.arg(firmware.name());
+            }
+            run(command.args(rest))
+        }
         [cmd, name, endpoint] if cmd == "debug" || cmd == "verify" => {
             debug(Firmware::parse(name)?, Some(endpoint), cmd == "verify")
         }

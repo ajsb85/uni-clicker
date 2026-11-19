@@ -11,7 +11,9 @@ Hello World firmware and framework ports for the Mikroe UNI Clicker with the SiB
 | `zig` | Zig and MicroZig STM32F746ZG port | [Zig example](examples/zig/) |
 | `necto`, `necto-windows` | Installed mikroSDK and Arm GCC | [NECTO example](examples/necto/) |
 | `freertos`, `threadx`, `libopencm3` | Upstream Cortex-M7 kernels and peripheral library | [Framework projects](examples/frameworks/) |
+| `zephyr`, `riot`, `chibios`, `mbed-os`, `nuttx`, `micropython` | SDK and interpreter builds for the UNI Clicker | [Framework targets](docs/frameworks.md) |
 | `mikroc`, `mikroc-source-check` | Classic mikroC PRO for ARM and an independent GCC/CMSIS build | [mikroC example](examples/mikroc/) |
+| `pio-arduino`, `pio-stm32cube`, `pio-cmsis`, `pio-libopencm3`, `pio-zephyr` | PlatformIO environments | [PlatformIO workflow](docs/platformio.md) |
 
 ## Build
 
@@ -57,5 +59,7 @@ For a serialized flash and GDB run with automatic probe-server cleanup, use `too
 ## Simulate
 
 With Renode on PATH, or `RENODE` set to its executable, run `tools/simulate.sh stm32cube`. Substitute any of the other build names to compare the exact USART6 greeting in the same offline Cortex-M7 model.
+
+Run `build/cli/debug/uni-cli simulate zephyr gpio` for the same simulation command through the Rust CLI. The CLI also accepts the `pio-` profiles and locates their PlatformIO-generated ELFs.
 
 The [Renode guide](docs/renode.md) covers GPIO timing, boot traces, and GDB. The [framework guide](docs/frameworks.md) lists all twelve requested frameworks and runtimes, their integration commands, and verification status. See also the [board research](docs/research.md), [bench results](docs/verification.md), and [agent handoff](AGENT.MD).
