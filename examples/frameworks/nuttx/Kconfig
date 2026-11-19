@@ -1,0 +1,5 @@
+config EXAMPLES_UNI_HELLO
+	tristate "UNI Clicker hello command"
+	default n
+	---help---
+		Print a greeting to the configured NuttX console.

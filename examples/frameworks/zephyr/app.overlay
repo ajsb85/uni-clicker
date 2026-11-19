@@ -1,0 +1,46 @@
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/pinctrl/stm32-pinctrl.h>
+
+/ {
+    chosen {
+        zephyr,console = &usart6;
+        zephyr,shell-uart = &usart6;
+    };
+
+    leds {
+        compatible = "gpio-leds";
+
+        uni_led: uni-led {
+            gpios = <&gpiod 7 GPIO_ACTIVE_HIGH>;
+        };
+    };
+};
+
+&pinctrl {
+    uni_usart6: uni_usart6 {
+        group1 {
+            pinmux = <STM32_PINMUX('C', 6, AF8)>,
+                     <STM32_PINMUX('C', 7, AF8)>;
+            bias-pull-up;
+        };
+    };
+};
+
+&usart6 {
+    pinctrl-0 = <&uni_usart6>;
+    pinctrl-names = "default";
+    current-speed = <115200>;
+    status = "okay";
+};
+
+&clk_hsi {
+    status = "okay";
+};
+
+&rcc {
+    clocks = <&clk_hsi>;
+    clock-frequency = <16000000>;
+    ahb-prescaler = <1>;
+    apb1-prescaler = <1>;
+    apb2-prescaler = <1>;
+};

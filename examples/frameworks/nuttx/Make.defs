@@ -1,0 +1,3 @@
+ifneq ($(CONFIG_EXAMPLES_UNI_HELLO),)
+CONFIGURED_APPS += $(APPDIR)/examples/uni_hello
+endif

@@ -12,7 +12,7 @@ const FLASH_SIZE: usize = 1024 * 1024;
 const RAM_BASE: u32 = 0x2000_0000;
 const RAM_TOP: u32 = 0x2005_0000;
 const HELP: &str = "uni-cli <command> [firmware] [endpoint]
-  build <stm32cube|arduino|rust|swift|all>   Build firmware with Make
+  build <stm32cube|arduino|rust|swift|zig|necto|necto-windows|freertos|threadx|libopencm3|all>   Build firmware with Make
   analyze <firmware>                      Inspect vectors, sections, and symbols
   probe                                   Identify the MCU over STM32CubeProgrammer SWD
   flash <firmware>                        Program, verify, and reset the UNI Clicker
@@ -25,6 +25,12 @@ enum Firmware {
     Arduino,
     Rust,
     Swift,
+    Zig,
+    Necto,
+    NectoWindows,
+    FreeRtos,
+    ThreadX,
+    LibOpenCm3,
 }
 
 impl Firmware {
@@ -34,6 +40,12 @@ impl Firmware {
             "arduino" => Ok(Self::Arduino),
             "rust" => Ok(Self::Rust),
             "swift" => Ok(Self::Swift),
+            "zig" => Ok(Self::Zig),
+            "necto" => Ok(Self::Necto),
+            "necto-windows" => Ok(Self::NectoWindows),
+            "freertos" => Ok(Self::FreeRtos),
+            "threadx" => Ok(Self::ThreadX),
+            "libopencm3" => Ok(Self::LibOpenCm3),
             _ => Err(format!("unknown firmware {name:?}").into()),
         }
     }
@@ -44,6 +56,12 @@ impl Firmware {
             Self::Arduino => "arduino",
             Self::Rust => "rust",
             Self::Swift => "swift",
+            Self::Zig => "zig",
+            Self::Necto => "necto",
+            Self::NectoWindows => "necto-windows",
+            Self::FreeRtos => "freertos",
+            Self::ThreadX => "threadx",
+            Self::LibOpenCm3 => "libopencm3",
         }
     }
 
@@ -59,6 +77,7 @@ impl Firmware {
         match self {
             Self::Arduino => "setup",
             Self::Swift => "uni_swift_main",
+            Self::Zig => "zig_entry",
             _ => "main",
         }
     }
@@ -69,6 +88,11 @@ impl Firmware {
             Self::Arduino => "Arduino",
             Self::Rust => "Rust",
             Self::Swift => "Embedded Swift",
+            Self::Zig => "Zig",
+            Self::Necto | Self::NectoWindows => "NECTO",
+            Self::FreeRtos => "FreeRTOS",
+            Self::ThreadX => "ThreadX",
+            Self::LibOpenCm3 => "libopencm3",
         };
         "Hello, UNI Clicker from !\r\n".len() + language.len()
     }

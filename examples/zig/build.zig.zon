@@ -1,0 +1,10 @@
+.{
+    .name = .uni_clicker_hello,
+    .fingerprint = 0xbaed9e434e5e4156,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.17.1",
+    .dependencies = .{
+        .microzig = .{ .path = "../../.cache/vendor/microzig" },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+}

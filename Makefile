@@ -6,6 +6,12 @@ STM32CUBE_F7 ?= $(CURDIR)/.cache/vendor/STM32CubeF7
 STM32_GCC ?= arm-none-eabi-gcc
 OBJCOPY ?= arm-none-eabi-objcopy
 SWIFTC ?= swiftc
+ZIG ?= zig
+MICROZIG ?= $(CURDIR)/.cache/vendor/microzig
+NECTO_SDK_ROOT ?=
+FREERTOS_ROOT ?=
+THREADX_ROOT ?=
+OPENCM3 ?=
 ARDUINO_CLI ?= arduino-cli
 ARDUINO_FQBN := STMicroelectronics:stm32:GenF7:pnum=GENERIC_F746ZGTX,xserial=none,usb=none
 ARDUINO_TARGET := build/arduino/HelloUni.ino
@@ -21,16 +27,24 @@ CFLAGS := -g3 -Os -ffunction-sections -fdata-sections -Wall -Wextra -DSTM32F746x
 LINK = -Tfirmware/stm32f746.ld -Wl,--gc-sections,-z,noexecstack,-Map,$(@:.elf=.map)
 export TMPDIR := $(CURDIR)/.cache/tmp
 
-.PHONY: all stm32cube arduino rust swift cli deps-stm32cube check-sdk
+.PHONY: all stm32cube arduino rust swift zig necto necto-windows mikroc freertos threadx libopencm3 cli deps-stm32cube check-sdk check-microzig
 all: stm32cube arduino rust swift cli
 stm32cube: build/stm32cube/hello.bin build/stm32cube/hello.hex
 arduino: $(ARDUINO_TARGET).bin $(ARDUINO_TARGET).hex
 rust: build/rust/hello.bin build/rust/hello.hex
 swift: build/swift/hello.bin build/swift/hello.hex
+zig: build/zig/hello.bin build/zig/hello.hex
+necto: build/necto/hello.bin build/necto/hello.hex
+necto-windows: build/necto-windows/hello.bin build/necto-windows/hello.hex
+freertos: build/freertos/hello.bin build/freertos/hello.hex
+threadx: build/threadx/hello.bin build/threadx/hello.hex
+libopencm3: build/libopencm3/hello.bin build/libopencm3/hello.hex
+mikroc:
+	tools/build-mikroc.sh
 cli: | .cache/tmp
 	cargo build --locked --manifest-path tools/uni-cli/Cargo.toml --target-dir build/cli
 
-.cache/tmp build/stm32cube build/arduino build/rust build/swift:
+.cache/tmp build/stm32cube build/arduino build/rust build/swift build/zig build/necto:
 	mkdir -p "$@"
 
 deps-stm32cube: | .cache/tmp
@@ -56,6 +70,33 @@ build/swift/hello.o: examples/swift/Hello.swift examples/swift/CBoard/board.h ex
 
 build/swift/hello.elf: examples/swift/board.c examples/swift/CBoard/board.h firmware/stm32f746.ld firmware/startup_support.c build/swift/hello.o Makefile | check-sdk .cache/tmp build/swift
 	$(STM32_GCC) $(CPU) -mfloat-abi=soft $(CFLAGS) -Iexamples/swift/CBoard -fno-short-enums -nostdlib $(LINK) $< $(STARTUP) build/swift/hello.o -o "$@"
+
+check-microzig:
+	@test -f "$(MICROZIG)/build.zig" || { echo 'Set MICROZIG to a MicroZig 0.17.41 checkout.' >&2; exit 1; }
+	@if [[ ! -e .cache/vendor/microzig ]]; then mkdir -p .cache/vendor; ln -s "$$(realpath "$(MICROZIG)")" .cache/vendor/microzig; fi
+	@test "$$(realpath "$(MICROZIG)")" = "$$(realpath .cache/vendor/microzig)"
+
+build/zig/hello.elf: examples/zig/build.zig examples/zig/build.zig.zon examples/zig/src/main.zig | check-microzig .cache/tmp build/zig
+	tools/build-zig.sh "$(ZIG)"
+	cp build/zig/microzig/firmware/hello.elf "$@"
+
+build/necto/hello.elf: examples/necto/main.c examples/necto/CMakeLists.txt examples/necto/arm-gcc.cmake firmware/stm32f746.ld firmware/startup_support.c | check-sdk .cache/tmp build/necto
+	cmake -S examples/necto -B build/necto -DCMAKE_TOOLCHAIN_FILE="$(CURDIR)/examples/necto/arm-gcc.cmake" -DSTM32CUBE_F7="$(STM32CUBE_F7)" -DNECTO_SDK_ROOT="$(NECTO_SDK_ROOT)"
+	cmake --build build/necto --parallel 4
+
+build/necto-windows/hello.elf: build/necto/hello.elf tools/build-necto-windows.sh
+	tools/build-necto-windows.sh "$(STM32CUBE_F7)"
+
+build/freertos/hello.elf: examples/frameworks/freertos/main.c examples/frameworks/freertos/FreeRTOSConfig.h
+build/freertos/hello.elf: KERNEL_DIR = $(FREERTOS_ROOT)
+build/threadx/hello.elf: examples/frameworks/threadx/main.c examples/frameworks/threadx/platform.c
+build/threadx/hello.elf: KERNEL_DIR = $(THREADX_ROOT)
+build/freertos/hello.elf build/threadx/hello.elf: examples/frameworks/CMakeLists.txt examples/frameworks/common/board.c examples/frameworks/common/board.h examples/necto/arm-gcc.cmake firmware/stm32f746.ld firmware/startup_support.c | check-sdk .cache/tmp
+	cmake -S examples/frameworks -B "$(@D)" -G Ninja -DCMAKE_TOOLCHAIN_FILE="$(CURDIR)/examples/necto/arm-gcc.cmake" -DSTM32CUBE_F7="$(STM32CUBE_F7)" -DFRAMEWORK="$(notdir $(@D))" -DKERNEL_DIR="$(KERNEL_DIR)"
+	cmake --build "$(@D)" --parallel 4
+
+build/libopencm3/hello.elf: examples/frameworks/libopencm3/main.c examples/frameworks/libopencm3/Makefile examples/frameworks/libopencm3/flash.ld | .cache/tmp
+	$(MAKE) -C examples/frameworks/libopencm3 OPENCM3="$(OPENCM3)" OUT="$(CURDIR)/build/libopencm3"
 
 %.bin: %.elf
 	$(OBJCOPY) -O binary "$<" "$@"
