@@ -2,6 +2,10 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+if [[ "${1:-}" == nanoframework-native ]]; then
+    shift
+    exec tools/simulate-nanoframework.sh "$@"
+fi
 usage() {
     echo 'Usage: tools/simulate.sh <profile> [smoke|gpio|trace|gdb]' >&2
     exit 2

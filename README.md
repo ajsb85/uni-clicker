@@ -1,6 +1,6 @@
 # UNI Clicker STM32F746ZG lab
 
-Hello World firmware and framework ports for the Mikroe UNI Clicker with the SiBRAIN STM32F746ZG card. The verified bench builds toggle LED C on PD7 every 500 ms and sends a toolchain-specific greeting over USART6 at 115200 baud, 8N1. Their ELFs expose `uni_heartbeat` and `uni_tx_bytes` for hardware verification.
+Hello World firmware and framework ports for the Mikroe UNI Clicker with the SiBRAIN STM32F746ZG card. The standard bench examples toggle LED C on PD7 every 500 ms and send a toolchain-specific greeting over USART6 at 115200 baud, 8N1. Their ELFs expose `uni_heartbeat` and `uni_tx_bytes` for hardware verification. The managed runtimes use their own deployment and debugger checks.
 
 | Build | Firmware tools | Source |
 | --- | --- | --- |
@@ -12,6 +12,7 @@ Hello World firmware and framework ports for the Mikroe UNI Clicker with the SiB
 | `necto`, `necto-windows` | Installed mikroSDK and Arm GCC | [NECTO example](examples/necto/) |
 | `freertos`, `threadx`, `libopencm3` | Upstream Cortex-M7 kernels and peripheral library | [Framework projects](examples/frameworks/) |
 | `zephyr`, `riot`, `chibios`, `mbed-os`, `nuttx`, `micropython` | SDK and interpreter builds for the UNI Clicker | [Framework targets](docs/frameworks.md) |
+| `nanoframework`, `nanoframework-native` | Windows .NET SDK, nanoBooter and nanoCLR | [Managed and native .NET builds](docs/frameworks.md#net-nanoframework) |
 | `mikroc`, `mikroc-source-check` | Classic mikroC PRO for ARM and an independent GCC/CMSIS build | [mikroC example](examples/mikroc/) |
 | `pio-arduino`, `pio-stm32cube`, `pio-cmsis`, `pio-libopencm3`, `pio-zephyr` | PlatformIO environments | [PlatformIO workflow](docs/platformio.md) |
 
@@ -52,13 +53,13 @@ build/cli/debug/uni-cli verify stm32cube
 build/cli/debug/uni-cli debug stm32cube
 ```
 
-`verify` checks the flash vectors, reset state, entry breakpoint, an instruction step, three GPIO transitions, USART6 transmit completion, and fault registers. It resets and resumes the loaded firmware. The interactive command opens GDB with the matching ELF. The GDB client defaults to `gdb-multiarch` and the server to `localhost:3333`. Close OpenOCD before the next flash so CubeProgrammer can claim the probe.
+`verify` checks flash vectors, reset state, the application entry and fault registers. The standard profile also checks GPIO transitions and USART6 transmit completion. The `nanoframework-native` profile checks the nanoBooter reset and two managed greetings at nanoCLR's native output routine. The interactive command opens GDB with the matching ELF. The GDB client defaults to `gdb-multiarch` and the server to `localhost:3333`. Close OpenOCD before the next flash so CubeProgrammer can claim the probe.
 
 For a serialized flash and GDB run with automatic probe-server cleanup, use `tools/verify-bench.sh stm32cube zig` after building those profiles. The NECTO Windows ST-LINK GDB server is available through `debug/start-st-gdbserver.sh`.
 
 ## Simulate
 
-With Renode on PATH, or `RENODE` set to its executable, run `tools/simulate.sh stm32cube`. Substitute any of the other build names to compare the exact USART6 greeting in the same offline Cortex-M7 model.
+With Renode on PATH, or `RENODE` set to its executable, run `tools/simulate.sh stm32cube`. The firmware profiles use the same offline Cortex-M7 model. The native .NET profile asserts the managed greeting at its nanoCLR dispatch point and captures binary Wire Protocol traffic from USART6.
 
 Run `build/cli/debug/uni-cli simulate zephyr gpio` for the same simulation command through the Rust CLI. The CLI also accepts the `pio-` profiles and locates their PlatformIO-generated ELFs.
 

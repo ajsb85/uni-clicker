@@ -29,7 +29,7 @@ CFLAGS := -g3 -Os -ffunction-sections -fdata-sections -Wall -Wextra -DSTM32F746x
 LINK = -Tfirmware/stm32f746.ld -Wl,--gc-sections,-z,noexecstack,-Map,$(@:.elf=.map)
 export TMPDIR ?= $(CURDIR)/.cache/tmp
 
-.PHONY: all stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check freertos threadx libopencm3 riot chibios zephyr nuttx micropython mbed-os nanoframework platformio $(PIO_TARGETS) cli deps-stm32cube check-sdk check-microzig
+.PHONY: all stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check freertos threadx libopencm3 riot chibios zephyr nuttx micropython mbed-os nanoframework nanoframework-native platformio $(PIO_TARGETS) cli deps-stm32cube check-sdk check-microzig
 all: stm32cube arduino rust swift cli
 stm32cube: build/stm32cube/hello.bin build/stm32cube/hello.hex
 arduino: $(ARDUINO_TARGET).bin $(ARDUINO_TARGET).hex
@@ -67,6 +67,8 @@ nuttx: | .cache/tmp
 	$(OBJCOPY) -O ihex build/nuttx/hello.elf build/nuttx/hello.hex
 nanoframework: | .cache/tmp
 	bash tools/build-nanoframework.sh
+nanoframework-native: nanoframework
+	bash tools/build-nanoframework-native.sh
 platformio: | .cache/tmp
 	"$(PLATFORMIO)" run -d examples/platformio
 $(PIO_TARGETS): pio-%: | .cache/tmp

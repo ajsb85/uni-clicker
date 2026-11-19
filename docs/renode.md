@@ -1,6 +1,6 @@
 # Renode on the UNI Clicker bench
 
-The checked-in [platform](../sim/uni-clicker.repl) models Cortex-M7, the F746ZG flash and RAM sizes, 16 MHz SysTick, RCC/RTC, GPIO C and D, LED C, and USART6. It runs offline. The upstream Discovery model lives at `$UNI_WINDOWS_ROOT/renode/renode/platforms/cpus/stm32f746.repl`. Its companion scripts are in `scripts/single-node/stm32f746*.resc`. Use them as model references for added peripherals. The checked-in model uses the UNI Clicker pins and memory geometry.
+The checked-in [platform](../sim/uni-clicker.repl) models Cortex-M7, the F746ZG flash and RAM sizes, 16 MHz SysTick, RCC/RTC, CRC, GPIO C and D, LED C, and USART6. It runs offline. The upstream Discovery model lives at `$UNI_WINDOWS_ROOT/renode/renode/platforms/cpus/stm32f746.repl`. Its companion scripts are in `scripts/single-node/stm32f746*.resc`. Use them as model references for added peripherals. The checked-in model uses the UNI Clicker pins and memory geometry.
 
 ## Four ways to run the same ELF
 
@@ -46,7 +46,13 @@ Quit Renode at the monitor when done. Use port 3333 for the real OpenOCD target 
 
 The native mikroC profile uses the ELF that `make mikroc` creates from the vendor BIN and listing. Its flash bytes match the vendor HEX. In `tools/simulate.sh mikroc gdb`, connect GDB to port 3334 with `build/mikroc/hello.elf` and set `break hello.c:32`. `continue` stops after the compiler's startup calls. `stepi` advances to line 34 in the tested build. GDB printed an SP alias warning while stepping in Renode and still resolved both addresses. The same recipe's `smoke`, `gpio`, and `trace` modes check the two greetings, the LED state, and the native startup opcodes. [Native build and verification details](mikroe.md)
 
-The model maps flash through the AXI address `0x08000000` and the ITCM alias `0x00200000`. RIOT uses a modeled TIM2 compare interrupt. The PLL model configures 216 MHz SysTick, USART6 at 108 MHz, and TIM5 at 108 MHz for Mbed OS, MicroPython and NuttX. `tools/simulate.sh nuttx` expects one startup line. The other runtime profiles expect two greetings and support the timed PD7 check. [Framework configuration](frameworks.md)
+The model maps flash through the AXI address `0x08000000` and the ITCM alias `0x00200000`. RIOT uses a modeled TIM2 compare interrupt. The PLL model configures 216 MHz SysTick, USART6 at 108 MHz, and TIM5 at 108 MHz for Mbed OS, MicroPython and NuttX. `tools/simulate.sh nuttx` expects one startup line. MicroPython emits two greetings and supports the timed PD7 check. [Framework configuration](frameworks.md)
+
+## nanoFramework boot and managed output
+
+`tools/simulate.sh nanoframework-native` loads the full flash BIN, resets through nanoBooter, and runs for six virtual seconds. A CPU hook reads the managed string at the native CLR output call. The check requires two exact greetings, CLR VTOR `0x00210000`, clear CFSR and HFSR, and a nanoFramework Wire Protocol capture on USART6. The encoded Wire Protocol frames are in `wire-protocol.bin`. The managed text checked at dispatch is in `renode.log`. The STM32 CRC peripheral is required because the runtime uses it for assembly header and image validation.
+
+`tools/simulate.sh nanoframework-native gdb` starts an interactive GDB server. Inspect nanoBooter first with its ELF, and use `nanoCLR.elf` for `CLRStartupThread` and the managed-to-native call. Resolve the emitter address from that ELF with `arm-none-eabi-nm` and the symbol `_ZN9CLR_Debug4EmitEPKci.part.0` from the pinned toolchain. [Native image and bench commands](frameworks.md#net-nanoframework)
 
 ## Add a peripheral or interactive test
 

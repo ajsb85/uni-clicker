@@ -1,0 +1,131 @@
+--- a/board.h
++++ b/board.h
+@@ -349 +349 @@
+-#define LINE_LED1                   PAL_LINE(GPIOB, 0U)
++#define LINE_LED1                   PAL_LINE(GPIOD, 7U)
+--- a/common/serialcfg.h
++++ b/common/serialcfg.h
+@@ -10 +10 @@
+-#define SERIAL_DRIVER           SD3
++#define SERIAL_DRIVER           SD6
+--- a/defconfig
++++ b/defconfig
+@@ -13 +13 @@
+-CONFIG_API_SYSTEM_NET=y
++# CONFIG_API_SYSTEM_NET is not set
+@@ -29 +29 @@
+-CONFIG_NF_NETWORKING_SNTP=y
++# CONFIG_NF_NETWORKING_SNTP is not set
+--- a/nanoBooter/main.c
++++ b/nanoBooter/main.c
+@@ -39,6 +39 @@
+-  // the following IF is not mandatory, it's just providing a way for a user to 'force'
+-  // the board to remain in nanoBooter and not launching nanoCLR
+-
+-  // if the USER button (blue one) is pressed, skip the check for a valid CLR image and remain in booter
+-  // the user button in this board has a pull-up resistor so the check has to be inverted
+-  if (!palReadLine(LINE_BUTTON))
++  if (CheckValidCLRImage((uint32_t)&__nanoConfig_end__))
+@@ -46,8 +41 @@
+-    // check for valid CLR image
+-    // we are checking for a valid image right after the configuration block
+-    if(CheckValidCLRImage((uint32_t)&__nanoConfig_end__))
+-    {
+-      // there seems to be a valid CLR image
+-      // launch nanoCLR
+-      LaunchCLR((uint32_t)&__nanoConfig_end__);
+-    }
++    LaunchCLR((uint32_t)&__nanoConfig_end__);
+--- a/nanoBooter/chconf.h
++++ b/nanoBooter/chconf.h
+@@ -65 +65 @@
+-#define CH_CFG_ST_FREQUENCY 10000
++#define CH_CFG_ST_FREQUENCY 1000
+@@ -93 +93 @@
+-#define CH_CFG_ST_TIMEDELTA 2
++#define CH_CFG_ST_TIMEDELTA 0
+--- a/nanoBooter/mcuconf.h
++++ b/nanoBooter/mcuconf.h
+@@ -36,6 +36,6 @@
+-#define STM32_HSE_ENABLED                   TRUE
+-#define STM32_LSE_ENABLED                   TRUE
+-#define STM32_CLOCK48_REQUIRED              TRUE
+-#define STM32_SW                            STM32_SW_PLL
+-#define STM32_PLLSRC                        STM32_PLLSRC_HSE
+-#define STM32_PLLM_VALUE                    4
++#define STM32_HSE_ENABLED                   FALSE
++#define STM32_LSE_ENABLED                   FALSE
++#define STM32_CLOCK48_REQUIRED              FALSE
++#define STM32_SW                            STM32_SW_HSI
++#define STM32_PLLSRC                        STM32_PLLSRC_HSI
++#define STM32_PLLM_VALUE                    16
+@@ -46,2 +46,2 @@
+-#define STM32_PPRE1                         STM32_PPRE1_DIV4
+-#define STM32_PPRE2                         STM32_PPRE2_DIV2
++#define STM32_PPRE1                         STM32_PPRE1_DIV1
++#define STM32_PPRE2                         STM32_PPRE2_DIV1
+@@ -288 +288 @@
+-#define STM32_SERIAL_USE_USART3             TRUE
++#define STM32_SERIAL_USE_USART3             FALSE
+@@ -291 +291 @@
+-#define STM32_SERIAL_USE_USART6             FALSE
++#define STM32_SERIAL_USE_USART6             TRUE
+--- a/nanoBooter/halconf.h
++++ b/nanoBooter/halconf.h
+@@ -421 +421 @@
+-#define SERIAL_DEFAULT_BITRATE              921600
++#define SERIAL_DEFAULT_BITRATE              115200
+--- a/nanoCLR/chconf.h
++++ b/nanoCLR/chconf.h
+@@ -65 +65 @@
+-#define CH_CFG_ST_FREQUENCY 10000
++#define CH_CFG_ST_FREQUENCY 1000
+@@ -93 +93 @@
+-#define CH_CFG_ST_TIMEDELTA 2
++#define CH_CFG_ST_TIMEDELTA 0
+--- a/nanoCLR/mcuconf.h
++++ b/nanoCLR/mcuconf.h
+@@ -36,6 +36,6 @@
+-#define STM32_HSE_ENABLED      TRUE
+-#define STM32_LSE_ENABLED      TRUE
+-#define STM32_CLOCK48_REQUIRED TRUE
+-#define STM32_SW               STM32_SW_PLL
+-#define STM32_PLLSRC           STM32_PLLSRC_HSE
+-#define STM32_PLLM_VALUE       4
++#define STM32_HSE_ENABLED      FALSE
++#define STM32_LSE_ENABLED      FALSE
++#define STM32_CLOCK48_REQUIRED FALSE
++#define STM32_SW               STM32_SW_HSI
++#define STM32_PLLSRC           STM32_PLLSRC_HSI
++#define STM32_PLLM_VALUE       16
+@@ -46,2 +46,2 @@
+-#define STM32_PPRE1            STM32_PPRE1_DIV4
+-#define STM32_PPRE2            STM32_PPRE2_DIV2
++#define STM32_PPRE1            STM32_PPRE1_DIV1
++#define STM32_PPRE2            STM32_PPRE2_DIV1
+@@ -293 +293 @@
+-#define STM32_SERIAL_USE_USART3      TRUE
++#define STM32_SERIAL_USE_USART3      FALSE
+@@ -296 +296 @@
+-#define STM32_SERIAL_USE_USART6      FALSE
++#define STM32_SERIAL_USE_USART6      TRUE
+@@ -358 +358 @@
+-#define STM32_UART_USE_USART6            TRUE
++#define STM32_UART_USE_USART6            FALSE
+--- a/nanoCLR/halconf.h
++++ b/nanoCLR/halconf.h
+@@ -432 +432 @@
+-#define SERIAL_DEFAULT_BITRATE              921600
++#define SERIAL_DEFAULT_BITRATE              115200
+--- a/target_system_io_ports_config.h
++++ b/target_system_io_ports_config.h
+@@ -22 +22 @@
+-#define NF_SERIAL_COMM_STM32_UART_USE_USART6 TRUE
++#define NF_SERIAL_COMM_STM32_UART_USE_USART6 FALSE
+--- a/target_system_io_ports_config.cpp
++++ b/target_system_io_ports_config.cpp
+@@ -38,0 +39 @@
++#if NF_SERIAL_COMM_STM32_UART_USE_USART6
+@@ -45,0 +47,2 @@
++
++#endif

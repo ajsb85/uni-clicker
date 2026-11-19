@@ -83,9 +83,13 @@ RIOT truncates the divisor at 16 MHz. The ChibiOS driver clears TC and signals `
 
 NuttX flashed and verified a 125,396-byte BIN. GDB reset at `0x0800039c` with MSP `0x20011a4c`, then stopped and stepped at the `puts` line in `unihello_main`. It read PC6 and PC7 in AF8, USART6 BRR `0x3aa`, and zero CFSR and HFSR. Renode captured the one startup greeting exactly.
 
-MicroPython passed HEX verification and reset at `0x0802011c` with MSP `0x2004fff8`. GDB stepped into the frozen `uni_hello.py` startup and inspected 38 bytes containing the complete CRLF greeting inside `uart_tx_data`. The backtrace included the bytecode interpreter and the `machine.UART.write` path. USART6 BRR was `0x3aa`, and CFSR and HFSR were zero. Renode captured both greetings and PD7 high, low, high. The physical board was left running this image after the test.
+MicroPython passed HEX verification and reset at `0x0802011c` with MSP `0x2004fff8`. GDB stepped into the frozen `uni_hello.py` startup and inspected 38 bytes containing the complete CRLF greeting inside `uart_tx_data`. The backtrace included the bytecode interpreter and the `machine.UART.write` path. USART6 BRR was `0x3aa`, and CFSR and HFSR were zero. Renode captured both greetings and PD7 high, low, high.
 
 The .NET nanoFramework managed application built with Windows `dotnet.exe` and printed five greetings in the POSIX runtime pinned at `e903edb`. The compatible `mscorlib.pe` uses `NFMRK2` and native contract hash `0x532e6934`. [Managed build and runtime instructions](frameworks.md)
+
+The native build produced a 1 MiB combined image. CubeProgrammer verified it at `0x08000000`. The MCU reset through nanoBooter at `0x00203674` with MSP `0x20000400`, then switched VTOR to the nanoCLR vector table at `0x00210000`. The batch GDB check stopped twice in `CLR_Debug::Emit`, read the full C# greeting each time, and stepped one native instruction. Both stops showed USART6 BRR `0x8b` and zero CFSR and HFSR. The optimized ChibiOS thread wrapper marks the end of GDB's backtrace. The physical board was left running this image. Bench logs are in `.cache/verification/nanoframework-native.wXySm1`. [Native build and SWD commands](frameworks.md#native-uni-clicker-image)
+
+Renode ran the same BIN through the native CLR and observed two exact managed greetings with the STM32 CRC model in place. The Wire Protocol capture contained the `NFPKTV1` header. The simulator asserted the managed text at the CLR dispatch point and verified VTOR and the fault registers. A separate GDB session stopped at the output call and stepped from `0x0023a508` to `0x0023a50c` while reporting its Cortex-M stack-pointer alias warning. [Renode procedure](renode.md#nanoframework-boot-and-managed-output)
 
 ## PlatformIO 20.0.0 results
 

@@ -15,7 +15,7 @@ The examples use the STM32F746ZG family and a greeting as the first observable o
 | libopencm3 | [Bare-metal application](../examples/frameworks/libopencm3/) | `make libopencm3` | Renode and physical SWD passed |
 | Mbed OS | [CMake C++ application](../examples/frameworks/mbed-os/) | `make mbed-os` | Renode and physical SWD passed |
 | MicroPython | [Frozen Python application](../examples/frameworks/micropython/) | `make micropython` | Renode UART and GPIO, physical flash and VM-to-UART debugger trace |
-| .NET nanoFramework | [Managed project](../examples/frameworks/nanoframework/) | `make nanoframework` | Windows SDK build and repeated POSIX nanoCLR greeting |
+| .NET nanoFramework | [Managed project and board patch](../examples/frameworks/nanoframework/) | `make nanoframework-native` | POSIX, native Renode, flash and physical managed-to-native debugger trace |
 
 ## Verified bench-native builds
 
@@ -88,4 +88,30 @@ clr=.cache/sdk-native/work/nano-posix-e903edb/bin/nanoFramework.nanoCLR.test
 timeout 5s stdbuf -oL "$clr" build/nanoframework/mscorlib.pe build/nanoframework/UniClickerHello.pe
 ```
 
-The command runs the repeating greeting for five seconds on the host. The CLR can be rebuilt from that revision with `cmake -S targets/posix -B build/posix -G Ninja -DNANO_POSIX_ENABLE_SMOKE=ON` followed by `cmake --build build/posix`. The matching community snapshot `21b7f0bb` provides `ChibiOS/ST_NUCLEO144_F746ZG`. Its linker lays out the booter at `0x08000000`, the CLR at `0x08010000` and deployment at `0x080c0000`. [nanoFramework community targets](https://github.com/nanoframework/nf-Community-Targets)
+The command runs the repeating greeting for five seconds on the host. The CLR can be rebuilt from that revision with `cmake -S targets/posix -B build/posix -G Ninja -DNANO_POSIX_ENABLE_SMOKE=ON` followed by `cmake --build build/posix`.
+
+### Native UNI Clicker image
+
+`make nanoframework-native` builds the managed project and stages an independent UNI Clicker variant of the community `ChibiOS/ST_NUCLEO144_F746ZG` board. The variant uses 16 MHz HSI, the LSI RTC, 1 kHz SysTick, PD7, and SD6 on PC6/PC7 at 115200 baud. It removes the Nucleo PC13 user-button boot gate, reserves USART6 for the Wire Protocol transport and disables the inherited Ethernet and SNTP configuration. [nanoFramework community targets](https://github.com/nanoframework/nf-Community-Targets)
+
+| Local input | Bench location relative to the repository | Override |
+| --- | --- | --- |
+| nanoCLR `e903edbe5258e8c6887c91c448ea5a0305e7040f` | `.cache/sdk-native/nano-e903edb` | `NANO_SOURCE` |
+| Community targets `21b7f0bbe310e8c1487bcca41bfa6a7ee730fac0` | `.cache/sdk-native/nano-community` | `NANO_COMMUNITY` |
+| ChibiOS stable 21.11, `074da4914767445cedff6b3ec4c13b58e6c1d5ab` | `.cache/sdk-native/work/nano-f746/_deps/chibios-src` | `NANO_CHIBIOS` |
+| Mbed TLS 3.6.7, `068ff080b369adfac81509f9b57b2afabaf82dc5` | `.cache/sdk-native/work/nano-posix-v2/_deps/mbedtls-src` | `NANO_MBEDTLS` |
+
+Use GNU Arm GCC 14.2.1, CMake, Ninja and the `FRAMEWORK_PYTHON` environment with `kconfiglib`. Remount the workspace SDK cache after a WSL restart. The runtime can be extracted from `nf-interpreter-e903edb.tar.gz` in the Windows framework cache. The native build goes under `.cache/sdk-native/work/nanoframework-native`. To configure against different dependencies, give `NANO_NATIVE_BUILD_DIR` a fresh directory so CMake resolves the new configuration. [Workspace setup](../AGENT.MD#start-a-fresh-session)
+
+The combined BIN writes nanoBooter at `0x08000000`, nanoCLR at `0x08010000`, and `mscorlib.pe` followed by `UniClickerHello.pe` at `0x080c0000`. Gaps and the deployment end marker are erased bytes `0xff`. The ELFs execute through the ITCM alias. Keep both ELFs with the BIN to resolve addresses in the booter and the CLR.
+
+```bash
+source tools/bench-env.sh
+make nanoframework-native cli
+cli=build/cli/debug/uni-cli
+"$cli" analyze nanoframework-native
+"$cli" simulate nanoframework-native
+"$cli" flash nanoframework-native
+```
+
+Start `debug/start-openocd.sh` in another terminal after CubeProgrammer releases the probe. Then run `"$cli" verify nanoframework-native`. The check resets to nanoBooter, stops twice at the native `CLR_Debug::Emit` entry, reads the C# string in memory, checks the CLR vector base and USART6 divisor, and steps an instruction. The CLR debug string is carried through the nanoFramework Wire Protocol. To inspect the CLR manually, use `"$cli" debug nanoframework-native` and load `build/nanoframework/nanoBooter.elf` to inspect booter symbols. [Simulation and debugging](renode.md#nanoframework-boot-and-managed-output)

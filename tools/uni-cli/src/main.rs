@@ -12,17 +12,18 @@ const FLASH_ITCM_ALIAS: u32 = 0x0020_0000;
 const FLASH_SIZE: usize = 1024 * 1024;
 const RAM_BASE: u32 = 0x2000_0000;
 const RAM_TOP: u32 = 0x2005_0000;
+const NANO_EMIT: &str = "_ZN9CLR_Debug4EmitEPKci.part.0";
 const HELP: &str = "uni-cli <command> [firmware] [endpoint]
   build <firmware|all>                     Build firmware with Make
   analyze <firmware>                      Inspect vectors, sections, and symbols
   probe                                   Identify the MCU over STM32CubeProgrammer SWD
   flash <firmware>                        Program, verify, and reset the UNI Clicker
   debug <firmware> [localhost:3333]         Open an interactive GDB session
-  verify <firmware> [localhost:3333]        Check reset, entry, and three LED edges in GDB
+  verify <firmware> [localhost:3333]        Check reset and the application in GDB
   simulate <firmware> [smoke|gpio|trace|gdb] Run the firmware in Renode
 
 Profiles: stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check
-          freertos threadx libopencm3 riot chibios zephyr mbed-os
+          freertos threadx libopencm3 riot chibios zephyr mbed-os nanoframework-native
           pio-arduino pio-stm32cube pio-cmsis pio-libopencm3 pio-zephyr";
 
 #[derive(Clone, Copy)]
@@ -43,6 +44,7 @@ enum Firmware {
     ChibiOs,
     Zephyr,
     MbedOs,
+    NanoFramework,
     PioArduino,
     PioStm32Cube,
     PioCmsis,
@@ -69,6 +71,7 @@ impl Firmware {
             "chibios" => Ok(Self::ChibiOs),
             "zephyr" => Ok(Self::Zephyr),
             "mbed-os" => Ok(Self::MbedOs),
+            "nanoframework-native" => Ok(Self::NanoFramework),
             "pio-arduino" => Ok(Self::PioArduino),
             "pio-stm32cube" => Ok(Self::PioStm32Cube),
             "pio-cmsis" => Ok(Self::PioCmsis),
@@ -96,6 +99,7 @@ impl Firmware {
             Self::ChibiOs => "chibios",
             Self::Zephyr => "zephyr",
             Self::MbedOs => "mbed-os",
+            Self::NanoFramework => "nanoframework-native",
             Self::PioArduino => "pio-arduino",
             Self::PioStm32Cube => "pio-stm32cube",
             Self::PioCmsis => "pio-cmsis",
@@ -105,6 +109,13 @@ impl Firmware {
     }
 
     fn artifact(self, suffix: &str) -> PathBuf {
+        if matches!(self, Self::NanoFramework) {
+            return PathBuf::from(if suffix == "elf" {
+                "build/nanoframework/nanoCLR.elf"
+            } else {
+                "build/nanoframework/uni-clicker-nano.bin"
+            });
+        }
         if let Some(profile) = self.name().strip_prefix("pio-") {
             let build_dir = env::var_os("PLATFORMIO_BUILD_DIR")
                 .map(PathBuf::from)
@@ -125,6 +136,7 @@ impl Firmware {
             Self::Zig => "zig_entry",
             Self::Mikroc => "mikroc_app_entry",
             Self::MikrocSourceCheck => "mikroc_source_entry",
+            Self::NanoFramework => NANO_EMIT,
             _ => "main",
         }
     }
@@ -145,6 +157,7 @@ impl Firmware {
             Self::ChibiOs => "ChibiOS",
             Self::Zephyr | Self::PioZephyr => "Zephyr",
             Self::MbedOs => "Mbed OS",
+            Self::NanoFramework => ".NET nanoFramework",
             Self::PioCmsis => "CMSIS",
         };
         "Hello, UNI Clicker from !\r\n".len() + language.len()
@@ -176,7 +189,7 @@ impl Image {
         let reset_address = reset & !1;
         let image_size = bytes.len() as u32;
         let reset_in_flash = (FLASH_BASE..FLASH_BASE + image_size).contains(&reset_address);
-        let reset_in_alias = matches!(firmware, Firmware::ChibiOs)
+        let reset_in_alias = matches!(firmware, Firmware::ChibiOs | Firmware::NanoFramework)
             && (FLASH_ITCM_ALIAS..FLASH_ITCM_ALIAS + image_size).contains(&reset_address);
         // Native mikroC starts at a word-aligned MSP and aligns it in the first instruction.
         let stack_alignment = if matches!(firmware, Firmware::Mikroc) {
@@ -304,15 +317,41 @@ fn analyze(firmware: Firmware) -> Result<()> {
         "{} bytes at {FLASH_BASE:#010x}, initial MSP {:#010x}, reset vector {:#010x}",
         image.length, image.stack, image.reset
     );
-    run(Command::new("arm-none-eabi-size").arg(&elf))?;
-    run(Command::new("arm-none-eabi-readelf")
-        .args(["-h", "-l", "-A"])
-        .arg(&elf))?;
+    if matches!(firmware, Firmware::NanoFramework) {
+        dump_elf(Path::new("build/nanoframework/nanoBooter.elf"))?;
+    }
+    dump_elf(&elf)?;
 
     let symbols = read_symbols(&elf)?;
-    for symbol in [firmware.entry(), "uni_heartbeat", "uni_tx_bytes"] {
+    let nano_symbols = [firmware.entry(), "CLRStartupThread"];
+    let bench_symbols = [firmware.entry(), "uni_heartbeat", "uni_tx_bytes"];
+    let required = if matches!(firmware, Firmware::NanoFramework) {
+        nano_symbols.as_slice()
+    } else {
+        bench_symbols.as_slice()
+    };
+    for symbol in required {
         println!("{}", symbol_line(&symbols, symbol)?);
     }
+    Ok(())
+}
+
+fn dump_elf(elf: &Path) -> Result<()> {
+    run(Command::new("arm-none-eabi-size").arg(elf))?;
+    run(Command::new("arm-none-eabi-readelf")
+        .args(["-h", "-l", "-A"])
+        .arg(elf))
+}
+
+fn set_symbol(command: &mut Command, symbols: &str, variable: &str, symbol: &str) -> Result<()> {
+    let address = symbol_line(symbols, symbol)?
+        .split_whitespace()
+        .next()
+        .ok_or("missing symbol address")?;
+    let address = u32::from_str_radix(address, 16)?;
+    command
+        .arg("-ex")
+        .arg(format!("set ${variable} = {address:#x}"));
     Ok(())
 }
 
@@ -348,26 +387,23 @@ fn debug(firmware: Firmware, endpoint: Option<&str>, verify: bool) -> Result<()>
     if verify {
         let image = Image::read(&firmware.artifact("bin"), firmware)?;
         let symbols = read_symbols(&elf)?;
-        for (variable, symbol) in [
-            ("uni_entry", firmware.entry()),
-            ("uni_heartbeat_address", "uni_heartbeat"),
-            ("uni_tx_address", "uni_tx_bytes"),
-        ] {
-            let line = symbol_line(&symbols, symbol)?;
-            let address = line
-                .split_whitespace()
-                .next()
-                .ok_or("missing symbol address")?;
-            let address = u32::from_str_radix(address, 16)?;
-            command
-                .arg("-ex")
-                .arg(format!("set ${variable} = {address:#x}"));
-        }
+        set_symbol(&mut command, &symbols, "uni_entry", firmware.entry())?;
         command
             .arg("-ex")
             .arg(format!("set $uni_expected_msp = {:#x}", image.stack))
             .arg("-ex")
-            .arg(format!("set $uni_expected_vector = {:#x}", image.reset))
+            .arg(format!("set $uni_expected_vector = {:#x}", image.reset));
+        if matches!(firmware, Firmware::NanoFramework) {
+            return run(command.args(["-x", "debug/verify-nanoframework.gdb"]));
+        }
+        set_symbol(
+            &mut command,
+            &symbols,
+            "uni_heartbeat_address",
+            "uni_heartbeat",
+        )?;
+        set_symbol(&mut command, &symbols, "uni_tx_address", "uni_tx_bytes")?;
+        command
             .arg("-ex")
             .arg(format!("set $uni_banner_size = {}", firmware.banner_size()))
             .arg("-ex")
