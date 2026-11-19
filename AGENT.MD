@@ -110,6 +110,8 @@ Windows GCC derives its tool search path from the working directory on this WSL 
 
 The ST-LINK server shipped by NECTO 7.4.4 was verified from WSL. Use `debug/start-st-gdbserver.sh` and `target remote 127.0.0.1:3335` in GDB. It can step the same running image at a C source line. Use OpenOCD on 3333 for the repo batch verifier. [Mikroe build and debugger details](docs/mikroe.md)
 
+The license dongle stays attached to Windows. Windows identifies it as `1011:0022`, bus description `mE Dongle mC ARM`. The legacy IDE needs normal Windows elevation when opened through WSL. The last elevated launch was canceled before the IDE opened. Use its Help menu to confirm dongle recognition. Keep license values and serials out of logs and Git. The source check target `make mikroc-source-check` uses GCC/CMSIS to build the same C application and has passed SWD and Renode.
+
 The classic mikroC compiler is at `mikroC PRO for ARM/mikroCARM.exe`. The project and headless log path are under `examples/mikroc/` and `build/mikroc/`. Its source-file error `340` is still open. An installed binary for NECTO's **mikroC AI for ARM** would provide another native path. Check `NECTOStudio7/packages/compilers/` after an update.
 
 ## Frameworks and examples
@@ -122,13 +124,13 @@ The classic mikroC compiler is at `mikroC PRO for ARM/mikroCARM.exe`. The projec
 | Embedded Swift | `examples/swift/`, `make swift` | Flash, SWD, Renode |
 | Zig / MicroZig | `examples/zig/`, `make zig` | Flash, SWD, Renode |
 | NECTO / mikroSDK | `examples/necto/`, `make necto necto-windows` | Flash, SWD, Renode and Windows compiler equivalence |
-| Classic mikroC | `examples/mikroc/`, `make mikroc` | Project and vendor CLI repro |
+| Classic mikroC | `examples/mikroc/`, `make mikroc` and `make mikroc-source-check` | Vendor CLI repro and separate GCC/CMSIS source validation on hardware and Renode |
 | FreeRTOS | `examples/frameworks/freertos/`, `make freertos` | Flash, SWD, Renode |
 | Eclipse ThreadX | `examples/frameworks/threadx/`, `make threadx` | Flash, SWD, Renode |
 | libopencm3 | `examples/frameworks/libopencm3/`, `make libopencm3` | Flash, SWD, Renode |
 | Zephyr | `examples/frameworks/zephyr/`, Nucleo F746ZG overlay | App and upstream target |
 | Apache NuttX | `examples/frameworks/nuttx/`, NSH app | App and upstream target |
-| RIOT | `examples/frameworks/riot/`, Nucleo F746ZG | App and upstream target |
+| RIOT | `examples/frameworks/riot/`, Nucleo F746ZG | Cross-build at `2e1ced49`, native64 run, initial USART3 output in Renode |
 | ChibiOS | `examples/frameworks/chibios/`, RT Nucleo F746ZG | App and upstream target |
 | Mbed OS | `examples/frameworks/mbed-os/`, Nucleo F746ZG | App and upstream target |
 | MicroPython | `examples/frameworks/micropython/`, staged F746ZG UART remap | App and tested board staging |
@@ -137,3 +139,7 @@ The classic mikroC compiler is at `mikroC PRO for ARM/mikroCARM.exe`. The projec
 See [framework build and port instructions](docs/frameworks.md) before flashing a reference board or interpreter. The verified RTOS kernels are the local NECTO FreeRTOS 11.3.0 and the ThreadX checkout at `$UNI_WINDOWS_ROOT/.uni-clicker-lab-cache/frameworks/threadx` (`b2868c3`). The libopencm3 checkout lives alongside it at `a3977e1`. Use the hard-float Cortex-M7 ABI for its F7 archive. Its framework library must be built before linking the example. Zephyr, NuttX, RIOT, ChibiOS, Mbed OS, MicroPython and nanoFramework retain their own build, runtime and board requirements.
 
 Use `tools/verify-bench.sh zig necto-windows freertos threadx libopencm3` for a serialized hardware run after building those profiles. It retains separate ELF, programmer, server and GDB logs in one `.cache/verification/bench.*` directory. For MicroZig, keep the compiler's local build cache on WSL and the large source packages on the Windows mount. Moving the Zig build cache itself to the Windows filesystem caused executable cache rename failures. The build script remedies the Ubuntu multiarch include path when Zig's native `regz` dependencies need `asm/types.h`.
+
+## Queued PlatformIO work
+
+The PlatformIO references are cloned under `$UNI_WINDOWS_ROOT/platformio/`. The checked-out revisions are `platform-ststm32` at `c419cfe`, `platformio-core` at `d8c2135`, `platformio-docs` at `a6877ce`, and `platformio-vscode-ide` at `3af3881`. The WSL installer environment is `.cache/platformio-venv`. Start the PlatformIO examples after finishing the current MikroE work. Verify the `nucleo_f746zg` board metadata against the physical UNI Clicker pinout before any upload, and reuse the local Renode model and Windows SWD workflow.

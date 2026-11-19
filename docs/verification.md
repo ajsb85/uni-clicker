@@ -54,3 +54,7 @@ The Windows NECTO GCC image was byte-identical to the WSL GCC image. The NECTO S
 Renode's Rust GPIO scenario observed high, low, high at the three specified virtual times. Its trace scenario captured instruction and UART activity, and the GDB scenario stepped from the Cortex-M reset path to the Rust entry source. See [Renode usage](renode.md).
 
 The classic mikroC compiler produced no HEX because it reported source-file error 340. The project, staging script, tested paths and remaining native-tool dependency are recorded in [Mikroe notes](mikroe.md). Reference framework and runtime projects have their own verification status in the [framework guide](frameworks.md).
+
+The separately named `mikroc-source-check` profile builds the exact legacy application source with a GCC/CMSIS adapter. Its 812-byte image passed flash readback, reset PC `0x080002b4`, source stepping, PD7 watchpoints, and USART6 byte counts `33, 33, 66`. Renode matched both greetings. Windows identified the ARM license dongle by its bus description. The native compiler and its legacy IDE still need a successful vendor build.
+
+The RIOT Nucleo F746ZG example produced a cross-compiled ELF at upstream revision `2e1ced49`. The Nucleo port's board LED and console mapping apply to that artifact.

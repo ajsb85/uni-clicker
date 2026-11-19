@@ -12,7 +12,7 @@ const FLASH_SIZE: usize = 1024 * 1024;
 const RAM_BASE: u32 = 0x2000_0000;
 const RAM_TOP: u32 = 0x2005_0000;
 const HELP: &str = "uni-cli <command> [firmware] [endpoint]
-  build <stm32cube|arduino|rust|swift|zig|necto|necto-windows|freertos|threadx|libopencm3|all>   Build firmware with Make
+  build <stm32cube|arduino|rust|swift|zig|necto|necto-windows|mikroc-source-check|freertos|threadx|libopencm3|all>   Build firmware with Make
   analyze <firmware>                      Inspect vectors, sections, and symbols
   probe                                   Identify the MCU over STM32CubeProgrammer SWD
   flash <firmware>                        Program, verify, and reset the UNI Clicker
@@ -28,6 +28,7 @@ enum Firmware {
     Zig,
     Necto,
     NectoWindows,
+    MikrocSourceCheck,
     FreeRtos,
     ThreadX,
     LibOpenCm3,
@@ -43,6 +44,7 @@ impl Firmware {
             "zig" => Ok(Self::Zig),
             "necto" => Ok(Self::Necto),
             "necto-windows" => Ok(Self::NectoWindows),
+            "mikroc-source-check" => Ok(Self::MikrocSourceCheck),
             "freertos" => Ok(Self::FreeRtos),
             "threadx" => Ok(Self::ThreadX),
             "libopencm3" => Ok(Self::LibOpenCm3),
@@ -59,6 +61,7 @@ impl Firmware {
             Self::Zig => "zig",
             Self::Necto => "necto",
             Self::NectoWindows => "necto-windows",
+            Self::MikrocSourceCheck => "mikroc-source-check",
             Self::FreeRtos => "freertos",
             Self::ThreadX => "threadx",
             Self::LibOpenCm3 => "libopencm3",
@@ -78,6 +81,7 @@ impl Firmware {
             Self::Arduino => "setup",
             Self::Swift => "uni_swift_main",
             Self::Zig => "zig_entry",
+            Self::MikrocSourceCheck => "mikroc_source_entry",
             _ => "main",
         }
     }
@@ -90,6 +94,7 @@ impl Firmware {
             Self::Swift => "Embedded Swift",
             Self::Zig => "Zig",
             Self::Necto | Self::NectoWindows => "NECTO",
+            Self::MikrocSourceCheck => "mikroC",
             Self::FreeRtos => "FreeRTOS",
             Self::ThreadX => "ThreadX",
             Self::LibOpenCm3 => "libopencm3",

@@ -27,7 +27,7 @@ CFLAGS := -g3 -Os -ffunction-sections -fdata-sections -Wall -Wextra -DSTM32F746x
 LINK = -Tfirmware/stm32f746.ld -Wl,--gc-sections,-z,noexecstack,-Map,$(@:.elf=.map)
 export TMPDIR := $(CURDIR)/.cache/tmp
 
-.PHONY: all stm32cube arduino rust swift zig necto necto-windows mikroc freertos threadx libopencm3 cli deps-stm32cube check-sdk check-microzig
+.PHONY: all stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check freertos threadx libopencm3 cli deps-stm32cube check-sdk check-microzig
 all: stm32cube arduino rust swift cli
 stm32cube: build/stm32cube/hello.bin build/stm32cube/hello.hex
 arduino: $(ARDUINO_TARGET).bin $(ARDUINO_TARGET).hex
@@ -39,12 +39,13 @@ necto-windows: build/necto-windows/hello.bin build/necto-windows/hello.hex
 freertos: build/freertos/hello.bin build/freertos/hello.hex
 threadx: build/threadx/hello.bin build/threadx/hello.hex
 libopencm3: build/libopencm3/hello.bin build/libopencm3/hello.hex
+mikroc-source-check: build/mikroc-source-check/hello.bin build/mikroc-source-check/hello.hex
 mikroc:
 	tools/build-mikroc.sh
 cli: | .cache/tmp
 	cargo build --locked --manifest-path tools/uni-cli/Cargo.toml --target-dir build/cli
 
-.cache/tmp build/stm32cube build/arduino build/rust build/swift build/zig build/necto:
+.cache/tmp build/stm32cube build/arduino build/rust build/swift build/zig build/necto build/mikroc-source-check:
 	mkdir -p "$@"
 
 deps-stm32cube: | .cache/tmp
@@ -83,6 +84,9 @@ build/zig/hello.elf: examples/zig/build.zig examples/zig/build.zig.zon examples/
 build/necto/hello.elf: examples/necto/main.c examples/necto/CMakeLists.txt examples/necto/arm-gcc.cmake firmware/stm32f746.ld firmware/startup_support.c | check-sdk .cache/tmp build/necto
 	cmake -S examples/necto -B build/necto -DCMAKE_TOOLCHAIN_FILE="$(CURDIR)/examples/necto/arm-gcc.cmake" -DSTM32CUBE_F7="$(STM32CUBE_F7)" -DNECTO_SDK_ROOT="$(NECTO_SDK_ROOT)"
 	cmake --build build/necto --parallel 4
+
+build/mikroc-source-check/hello.elf: examples/mikroc/cmsis-source-check.c examples/mikroc/hello.c firmware/stm32f746.ld firmware/startup_support.c | check-sdk .cache/tmp build/mikroc-source-check
+	$(STM32_GCC) $(CPU) -mfloat-abi=soft $(CFLAGS) -nostdlib $(LINK) $< $(STARTUP) -o "$@"
 
 build/necto-windows/hello.elf: build/necto/hello.elf tools/build-necto-windows.sh
 	tools/build-necto-windows.sh "$(STM32CUBE_F7)"

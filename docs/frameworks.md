@@ -10,7 +10,7 @@ The examples use the STM32F746ZG family and a greeting as the first observable o
 | Eclipse ThreadX | [Static thread and Cortex-M7 setup](../examples/frameworks/threadx/) | `make threadx` | Renode and physical SWD passed |
 | Arduino STM32duino | [Sketch](../examples/arduino/HelloUni/) | `make arduino` | Renode and physical SWD passed |
 | Apache NuttX | [NSH application](../examples/frameworks/nuttx/) | `stm32f746g-disco:nsh` reference port | Host greeting and upstream target checked |
-| RIOT | [Application](../examples/frameworks/riot/) | `nucleo-f746zg` reference port | Source and upstream target checked |
+| RIOT | [Application](../examples/frameworks/riot/) | `nucleo-f746zg` reference port | Cross-build, native64 run, first Renode banner |
 | ChibiOS | [RT application](../examples/frameworks/chibios/) | `RT-STM32F746ZG-NUCLEO144` with USART6 enabled | Source and upstream target checked |
 | libopencm3 | [Bare-metal application](../examples/frameworks/libopencm3/) | `make libopencm3` | Renode and physical SWD passed |
 | Mbed OS | [CMake C++ application](../examples/frameworks/mbed-os/) | `NUCLEO_F746ZG`, archived 6.x toolchain | Source and upstream target checked |
@@ -61,7 +61,7 @@ make -j4
 
 ## RIOT
 
-`make -C examples/frameworks/riot RIOTBASE="$RIOT" BOARD=nucleo-f746zg` builds against the official F746ZG Nucleo port. The app uses `ztimer_msec`, standard output, and the board LED. Adapt the RIOT BSP if you need that port to use the UNI Clicker USART6 and PD7. [RIOT](https://github.com/RIOT-OS/RIOT)
+`make -C examples/frameworks/riot RIOTBASE="$RIOT" BOARD=nucleo-f746zg` builds against the official F746ZG Nucleo port. The app uses `ztimer_msec`, standard output, and the board LED. The ELF built at revision `2e1ced49` with GNU Arm GCC 14.2.1 using the local checkout under `.cache/vendor/RIOT`. The `native64` build emitted repeated greetings and LED events when run directly. The Nucleo ELF emitted its first greeting on USART3 in the full STM32F746 Renode model. Later delays exercised LPTIM1 registers that the model lacks, so the simulation establishes startup and first UART output. Adapt the RIOT BSP for USART6 and PD7 on the UNI Clicker. [RIOT](https://github.com/RIOT-OS/RIOT)
 
 ## ChibiOS
 
