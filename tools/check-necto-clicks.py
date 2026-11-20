@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import shutil
 from pathlib import Path
 import subprocess
@@ -34,7 +35,12 @@ def monitor_path(path):
 
 
 def select_firmware(case, definition, compiler, out, build_index):
-    if build_index and (driver := definition.get("driver")):
+    if driver := definition.get("driver"):
+        if not build_index:
+            sdk_build = out / "sdk"
+            capture([ROOT / "tools/build-click-sdk.py", "--case", driver, "--compiler", compiler,
+                     "--out", sdk_build], out / "build-command.log", 180)
+            build_index = sdk_build / "build-index.json"
         builds = json.loads(build_index.read_text())["drivers"]
         build = builds.get(driver)
         if not build or build["toolchain"] != compiler or build["stages"]["artifacts"] != "passed":
@@ -87,6 +93,11 @@ def verify(case, compiler, report, cli, renode, build_index):
                 raise SystemExit(f"{case.stem}/{run['name']} did not finish. See {log}")
         else:
             capture([cli, "renode-script", script], log, 45)
+        if "monitor_words" in run:
+            words = [int(line.strip(), 16) for line in log.read_text().splitlines()
+                     if re.fullmatch(r"0x[0-9a-fA-F]{8}", line.strip())]
+            if words != run["monitor_words"]:
+                raise SystemExit(f"{case.stem}/{run['name']} register mismatch: {words!r}. See {log}")
         observed = [line.strip() for line in uart.read_text().splitlines()] if uart.exists() else []
         if observed != run["uart"]:
             raise SystemExit(f"{case.stem}/{run['name']} UART mismatch: {observed!r}. See {log}")

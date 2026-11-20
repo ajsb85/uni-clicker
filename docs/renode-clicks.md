@@ -1,6 +1,6 @@
 # NECTO Click drivers on the UNI Clicker
 
-The Click checker builds firmware for the STM32F746ZG SiBRAIN card and runs the ELF through the Rust host's `renode-script` command. The host loads the portable Renode `librenode.so`. Each case registers its external device on a UNI Clicker REPL and defines bounded Monitor commands and expected USART6 output. [Case runner](../tools/check-necto-clicks.py) · [Embedded Renode](renode.md#embed-renode-in-the-rust-host)
+The Click checker builds firmware for the STM32F746ZG SiBRAIN card and runs the ELF in Renode. Pass `--renode` to use the portable executable or use the default Rust host, which loads `librenode.so`. Each case registers its external device on a UNI Clicker REPL and defines bounded Monitor commands and expected USART6 output. [Case runner](../tools/check-necto-clicks.py) · [Embedded Renode host](../tools/uni-cli/src/renode_native.rs)
 
 ## Two-Wire ETH Click on MikroBUS 1
 
@@ -37,6 +37,24 @@ Use the directories printed by the first two commands. The comparison requires t
 
 This case compiles MikroE's original Thermo 28 `main.c` and AS6221 driver. The local board adapter supplies the MikroBUS 1 pin map, HSI timing, CMSIS startup, and USART6 logging. The external AS6221 attaches to I2C1 at its default address `0x48`. The case injects `22.50 °C` and `−5.25 °C`, then boots again with the Click removed and checks the diagnostic. The SDK's legacy 32-bit handle and GPIO conversions are compiler warnings in this build. [Board adapter](../examples/necto-click/) · [Case](../sim/clicks/thermo28.json)
 
+## Ambient voltage sweep
+
+The upstream Ambient example reads MikroBUS socket 1 AN on PA3 using ADC1
+channel 3. The platform uses a 3.3 V reference and the example selects
+12-bit resolution. The test sets channel 4 to full scale as a control for
+channel selection, then sweeps channel 3 and checks the ADC data register
+and USART6 output.
+
+| Input | Raw ADC code | Reported light intensity |
+| --- | ---: | ---: |
+| 0.33 V | 409 | 47 µW/cm² |
+| 1.65 V | 2047 | 235 µW/cm² |
+| 2.97 V | 3685 | 424 µW/cm² |
+
+These values exercise the SDK conversion from ADC code to light intensity.
+The test uses an ideal voltage source and a fixed conversion time.
+[Case](../sim/clicks/ambient.json) · [Wiring](../sim/clicks/ambient.repl) · [ADC model](../sim/nucleo-f746zg/F746VoltageADC.cs)
+
 ## SDK build gate
 
 `tools/build-click-sdk.py` compiles the original SDK driver sources and
@@ -69,6 +87,27 @@ compiler and stage results. The simulation job checks the ELF hash before
 booting the Thermo 28 build. The standalone LAN8651 probe remains in the
 peripheral regression job.
 
+### Run the 64-driver build pilot
+
+The [pinned sample](../examples/necto-click/pilot64.json) retains all six
+cohort boards and covers 24 bus combinations, including GPIO-only drivers,
+drivers with extra headers, and a multi-source library. The pilot uses the
+same original C sources and compiler settings as the cohort. It exercises
+build coverage with separate reports for each shard.
+
+```bash
+for shard in 0 1 2 3; do
+  tools/build-click-sdk.py --corpus "$FULL_CLICK_SDK" --pilot \
+    --shards 4 --shard "$shard" --out build/click-pilot64
+done
+```
+
+The first pass linked 46 of 64 examples. Shared fixes added SDK delay names,
+the GCC generic-pointer and byte extraction helpers, the SDK conversions
+library, the STM32 OneWire build integration, and math library linkage.
+All 64 then compiled and linked with Linux Arm GNU. Electronics and protocol behavior for the additional boards can be checked
+in Renode or on the bench as profiles become available.
+
 ### Join the build and simulation evidence
 
 Generate `corpus.json` with `clickforge renode-corpus`. Run
@@ -98,6 +137,6 @@ tools/check-necto-clicks.py inventory
 tools/check-necto-clicks.py verify
 ```
 
-The preparation step fetches pinned shallow, sparse MikroE source trees. For the NECTO compiler on the WSL bench, use the installed SDK selected by `tools/bench-env.sh` and `tools/prepare-necto-clicks.sh --drivers-only`. The GitHub Actions workflow inventories the full pinned corpus, builds the six-driver cohort, and runs the registered simulation cases. It uploads compiler logs, ELF and HEX files, build metadata, generated scripts, UART output, and case results. The pinned corpus contains 2,018 upstream example directories. Thermo 28 and the standalone LAN8651 probe currently have registered simulation cases. [Workflow](../.github/workflows/clicks.yml)
+The preparation step fetches pinned shallow, sparse MikroE source trees. For the NECTO compiler on the WSL bench, use the installed SDK selected by `tools/bench-env.sh` and `tools/prepare-necto-clicks.sh --drivers-only`. The GitHub Actions workflow inventories the full pinned corpus, builds the six-driver cohort, and runs the registered simulation cases. It uploads compiler logs, ELF and HEX files, build metadata, generated scripts, UART output, and case results. The pinned corpus contains 2,018 upstream example directories. Thermo 28, Ambient, and the standalone LAN8651 probe have registered simulation cases. [Workflow](../.github/workflows/clicks.yml)
 
-The Windows resource inventory points to the sibling `clickforge` and `boardforge` checkouts under `C:\Users\gbast\winui\firechip-forge`. Clickforge's driver IDs and model metadata can seed the inventory. Each Renode case still needs a verified socket map, a firmware build, an external model, and expected behavior. Use the [SystemC and RTL examples](renode-cosim.md) for cases that need a separate shared library or simulator process.
+The Windows resource inventory points to the sibling `clickforge` and `boardforge` checkouts under `C:\Users\gbast\winui\firechip-forge`. Clickforge's driver IDs and model metadata can seed the inventory. Each Renode case still needs a verified socket map, a firmware build, an external model, and expected behavior. See the [Renode handoff](renode.md) for the local tools and source references.

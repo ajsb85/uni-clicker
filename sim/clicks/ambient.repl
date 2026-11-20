@@ -1,0 +1,14 @@
+using "../uni-clicker.repl"
+
+// UNI Clicker socket 1 AN connects to PA3, which mikroSDK selects on ADC1 channel 3.
+gpioA: GPIOPort.STM32_GPIOPort @ sysbus <0x40020000, +0x400>
+    numberOfAFs: 16
+
+adc1: Analog.F746VoltageADC @ sysbus 0x40012000
+    referenceVoltage: 3.3
+
+// The SDK configures the shared prescaler before starting the regular converter.
+adcCommon: Memory.ArrayMemory @ sysbus <0x40012300, +0xc>
+    size: 0xc
+
+lightInput: Analog.ADCChannelSource @ adc1 3

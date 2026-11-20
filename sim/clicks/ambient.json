@@ -1,0 +1,33 @@
+{
+  "driver": "ambient",
+  "runs": [
+    {
+      "name": "sweep",
+      "model": "sim/nucleo-f746zg/F746VoltageADC.cs",
+      "platform": "sim/clicks/ambient.repl",
+      "commands": [
+        "sysbus.adc1 SetVoltage 3300000 4",
+        "sysbus.adc1 SetVoltage 330000 3",
+        "emulation RunFor \"0.50\"",
+        "sysbus ReadDoubleWord 0x4001204c",
+        "sysbus.adc1 SetVoltage 1650000 3",
+        "emulation RunFor \"1.00\"",
+        "sysbus ReadDoubleWord 0x4001204c",
+        "sysbus.adc1 SetVoltage 2970000 3",
+        "emulation RunFor \"1.00\"",
+        "sysbus ReadDoubleWord 0x4001204c"
+      ],
+      "monitor_words": [409, 2047, 3685],
+      "uart": [
+        "Application Init",
+        "Application Task",
+        "Light Intensity: 47 uW/cm2",
+        "",
+        "Light Intensity: 235 uW/cm2",
+        "",
+        "Light Intensity: 424 uW/cm2",
+        ""
+      ]
+    }
+  ]
+}

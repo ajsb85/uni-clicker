@@ -40,5 +40,5 @@ checkout .cache/vendor/mikrosdk-click-v2 https://github.com/MikroElektronika/mik
 if [[ "${1:-}" != --drivers-only ]]; then
     checkout .cache/vendor/mikrosdk-v2 https://github.com/MikroElektronika/mikrosdk_v2.git \
         6bcf71dff049316688475ff691f7ec24bcd50d05 cmake drv hal \
-        targets/arm/mikroe/stm32 targets/arm/mikroe/common targets/arm/mikroe/core platform/ring
+        targets/arm/mikroe/stm32 targets/arm/mikroe/common targets/arm/mikroe/core platform/ring platform/conversions
 fi

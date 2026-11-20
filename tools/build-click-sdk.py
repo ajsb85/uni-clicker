@@ -16,9 +16,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 ADAPTER = ROOT / "examples/necto-click"
 COHORT = ADAPTER / "cohort.json"
+PILOT = ADAPTER / "pilot64.json"
 CACHED_SOURCES = ROOT / ".cache/vendor"
 DRIVER = re.compile(r"[a-z0-9_]+")
-INCLUDES = re.compile(rb'^\s*#\s*include\s*[<"]drv_([a-z0-9_]+)\.h[>"]', re.MULTILINE)
+INCLUDES = re.compile(rb'^\s*#\s*include\s*[<"]([a-z0-9_]+)\.h[>"]', re.MULTILINE)
 POSITIONS = re.compile(rb'^\s*#\s*define\s+MIKROBUS_POSITION_\w+\s+MIKROBUS_(\d+)\b', re.MULTILINE)
 
 # Low-level variants selected by the SDK's STM32F7 CMake rules.
@@ -34,6 +35,7 @@ PERIPHERALS = {
         "ANALOG_IN_RESOLUTION_CMAKE=ANALOG_IN_RESOLUTION_12_BIT",
     ]),
     "pwm": ("pwm", "tim", "implementation_1", "hal_ll_tim", []),
+    "one_wire": ("one_wire", "one_wire", "", "hal_ll_one_wire", ["MACRO_USAGE_ONE_WIRE"]),
 }
 GPIO = {"digital_in", "digital_out", "port"}
 SHAPE_FLAGS = [
@@ -161,7 +163,7 @@ class Target:
             return subprocess.check_output(["wslpath", "-m", str(path)], text=True).strip()
         return str(path)
 
-    def config(self, out, include, modules):
+    def config(self, out, include, modules, imports):
         includes = [out, include, *self.includes]
         sources = [
             ADAPTER / "board.c", self.stm32 / "src/gpio/hal_ll_gpio.c",
@@ -176,11 +178,16 @@ class Target:
         for module in sorted(modules):
             if module in PERIPHERALS:
                 _, part, implementation, low_level, flags = PERIPHERALS[module]
-                includes.extend([
-                    self.stm32 / "include" / part,
-                    self.stm32 / "include" / part / f"hal_ll_{part}_pin_map" / implementation,
-                ])
-                sources.append(self.stm32 / "src" / part / implementation / f"{low_level}.c")
+                include_part = self.stm32 / "include" / part
+                includes.append(include_part)
+                if implementation:
+                    includes.append(include_part / f"hal_ll_{part}_pin_map" / implementation)
+                source_dir = self.stm32 / "src" / part / implementation
+                if module == "one_wire":
+                    includes.append(source_dir)
+                    sources.append(ADAPTER / "one_wire_compat.c")
+                else:
+                    sources.append(source_dir / f"{low_level}.c")
                 defines.extend(f"-D{flag}" for flag in flags)
                 hal = "adc" if module == "analog_in" else module
                 sources.append(self.sdk / "hal/lib/src" / f"lib_hal_{hal}" / f"hal_{hal}.c")
@@ -200,6 +207,11 @@ class Target:
             defines.extend(["-Dstm32", "-D__cortex_m7__"])
             defines.extend(f"-DUART{port}_IRQHandler=USART{port}_IRQHandler"
                            for port in (1, 2, 3, 6))
+        if "conversions" in imports:
+            conversions = self.sdk / "platform/conversions/lib"
+            includes.append(conversions / "include")
+            sources.append(conversions / "src/conversions.c")
+            defines.extend(["-D__CONVERSIONS_CHIPS_16BIT_32BIT__", "-D__CONVERSIONS_SET__"])
         flags = [*SHAPE_FLAGS, *defines, *(f"-I{self.path(path)}" for path in includes)]
         return flags, sources
 
@@ -208,7 +220,8 @@ class Target:
         objects = []
         for index, path in enumerate(paths):
             obj = out / f"{index}-{path.stem}.o"
-            run([*self.cc, *flags, "-include", "delays.h", "-c", self.path(path), "-o",
+            run([*self.cc, *flags, "-include", "delays.h", "-include", "generic_pointer.h",
+                 "-c", self.path(path), "-o",
                  self.path(obj)], log, self.cwd)
             objects.append(obj)
         return objects
@@ -218,7 +231,7 @@ class Target:
         linked = out / "example.elf"
         map_file = self.path(out / "example.map")
         run([*self.cc, *flags, *LINK_FLAGS, f"-T{script}", f"-Wl,-Map,{map_file}",
-             *(self.path(file) for file in [*objects, *support]), "-o", self.path(linked)],
+             *(self.path(file) for file in [*objects, *support]), "-lm", "-o", self.path(linked)],
             log, self.cwd)
         return linked
 
@@ -261,13 +274,14 @@ def build_driver(target, click, out, revision, expected_buses=None):
             files = [*headers, *drivers]
             if example.is_file():
                 files.append(example)
-            modules = dependencies(files)
+            imports = dependencies(files)
+            modules = {name.removeprefix("drv_") for name in imports if name.startswith("drv_")}
             buses = sorted(PERIPHERALS[module][0] for module in PERIPHERALS.keys() & modules)
             result["interfaces"] = buses
             result["sdk_modules"] = sorted(modules)
             if expected_buses is not None and buses != sorted(expected_buses):
                 raise BuildError(f"SDK interface set {buses!r} differs from configured {expected_buses!r}")
-            flags, support = target.config(out, include, modules)
+            flags, support = target.config(out, include, modules, imports)
             flatten = (target.sdk / "cmake/InstallHeadersFlatten.cmake.in").read_text()
             (out / "flatten_me.h").write_text(flatten.replace(
                 "@MACRO_LIST1@@MACRO_LIST2@", "#define FLATTEN_ME_LEVEL FLATTEN_ME_LEVEL_NONE"
@@ -347,6 +361,7 @@ def main():
     select = parser.add_mutually_exclusive_group()
     select.add_argument("--case", action="append", help="One or more SDK driver IDs")
     select.add_argument("--all", action="store_true", help="Process the complete SDK inventory")
+    select.add_argument("--pilot", action="store_true", help="Run the pinned 64-driver build sample")
     parser.add_argument("--shard", type=int, default=0)
     parser.add_argument("--shards", type=int, default=1)
     args = parser.parse_args()
@@ -354,7 +369,11 @@ def main():
         parser.error("--shard must index one of --shards")
     try:
         cohort = json.loads(COHORT.read_text())
-        root, names = corpus_selection(args.corpus, args.case, args.all, cohort)
+        pilot = json.loads(PILOT.read_text()) if args.pilot else None
+        cases = list(pilot["drivers"]) if pilot else args.case
+        root, names = corpus_selection(args.corpus, cases, args.all, cohort)
+        if pilot and git_revision(root) != pilot["sdk_revision"]:
+            raise BuildError("the 64-driver sample requires the SDK revision in its selection manifest")
         if not names:
             raise BuildError("SDK selection contains no drivers")
         target = Target(args)
