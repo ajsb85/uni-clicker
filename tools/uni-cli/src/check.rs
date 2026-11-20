@@ -11,6 +11,8 @@ pub(super) fn run_check(firmware: Firmware, flags: &[String]) -> Result<()> {
     let mut hardware = false;
     let mut trace = false;
     let mut hardware_trace = false;
+    let mut uart = None;
+    let mut runs = None;
     let mut programmer = None;
     let mut arguments = flags.iter();
     while let Some(flag) = arguments.next() {
@@ -18,6 +20,20 @@ pub(super) fn run_check(firmware: Firmware, flags: &[String]) -> Result<()> {
             "--hardware" if !hardware => hardware = true,
             "--trace" if !trace => trace = true,
             "--hardware-trace" if !hardware_trace => hardware_trace = true,
+            "--uart" if uart.is_none() => {
+                uart = Some(
+                    arguments
+                        .next()
+                        .ok_or("--uart requires a Windows COM port")?,
+                );
+            }
+            "--runs" if runs.is_none() => {
+                let value: usize = arguments.next().ok_or("--runs requires a count")?.parse()?;
+                if !(1..=10).contains(&value) {
+                    return Err("--runs must be between 1 and 10".into());
+                }
+                runs = Some(value);
+            }
             "--programmer" if programmer.is_none() => {
                 programmer = Some(Programmer::parse(
                     arguments.next().ok_or("--programmer requires a value")?,
@@ -39,8 +55,22 @@ pub(super) fn run_check(firmware: Firmware, flags: &[String]) -> Result<()> {
     {
         return Err("trace checks support stm32cube, freertos, and freertos-console".into());
     }
-    if hardware_trace && !matches!(firmware, Firmware::Stm32Cube | Firmware::FreeRtos) {
-        return Err("hardware trace checks support stm32cube and freertos".into());
+    let console_hardware = hardware_trace && matches!(firmware, Firmware::FreeRtosConsole);
+    if console_hardware && uart.is_none() {
+        return Err("freertos-console --hardware-trace requires --uart COMx".into());
+    }
+    if !console_hardware && (uart.is_some() || runs.is_some()) {
+        return Err("--uart and --runs require freertos-console --hardware-trace".into());
+    }
+    if hardware_trace
+        && !matches!(
+            firmware,
+            Firmware::Stm32Cube | Firmware::FreeRtos | Firmware::FreeRtosConsole
+        )
+    {
+        return Err(
+            "hardware trace checks support stm32cube, freertos, and freertos-console".into(),
+        );
     }
 
     let name = firmware.name();
@@ -116,6 +146,9 @@ pub(super) fn run_check(firmware: Firmware, flags: &[String]) -> Result<()> {
                 .env("UNI_TRACE_CLI", &cli);
             if stage == "hardware-trace" {
                 command.arg("--hardware");
+                if let Some(port) = uart {
+                    command.arg(port).arg(runs.unwrap_or(3).to_string());
+                }
             }
             command
         } else {

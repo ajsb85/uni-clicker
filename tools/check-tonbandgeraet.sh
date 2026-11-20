@@ -2,8 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source tools/bench-env.sh
-if [[ $# -lt 2 || $# -gt 3 || ! "$1" =~ ^(stm32cube|freertos|freertos-console)$ || ( $# == 3 && ( "$3" != --hardware || "$1" == freertos-console ) ) ]]; then
-    echo 'Usage: tools/check-tonbandgeraet.sh <stm32cube|freertos|freertos-console> <output-dir> [--hardware for stm32cube or freertos]' >&2
+if [[ $# -lt 2 || ! "$1" =~ ^(stm32cube|freertos|freertos-console)$ ||
+      ( $# != 2 && ( "$3" != --hardware ||
+        ( "$1" == freertos-console && ( $# != 5 || ! "${4^^}" =~ ^COM[1-9][0-9]*$ || ! "$5" =~ ^([1-9]|10)$ ) ) ||
+        ( "$1" != freertos-console && $# != 3 ) ) ) ]]; then
+    echo 'Usage: tools/check-tonbandgeraet.sh PROFILE OUTPUT [--hardware [COMx RUNS for freertos-console]]' >&2
     exit 2
 fi
 profile=$1
@@ -54,6 +57,34 @@ case "$profile" in
 esac
 
 elf="$out/hello.elf"
+convert() {
+    local destination=$1 expected_greeting=$2 verification_profile=$3
+    python3 tools/check-tonbandgeraet.py extract "$destination" "$expected_greeting"
+    "$cli" --Werror dump --mode "$mode" "$destination/trace.bin" >"$destination/events.jsonl" 2>"$destination/decode.log"
+    python3 tools/check-tonbandgeraet.py verify "$destination" "$verification_profile"
+    "$cli" --Werror conv --mode "$mode" --output "$destination/uni.perfetto-trace" \
+        "$destination/trace.bin" >"$destination/conversion.log" 2>&1
+    test -s "$destination/uni.perfetto-trace"
+}
+
+if [[ $# == 5 ]]; then
+    ports=$(timeout --kill-after=1s 6s powershell.exe -NoProfile -NonInteractive \
+        -Command '[System.IO.Ports.SerialPort]::GetPortNames()')
+    if ! tr -d '\r' <<< "$ports" | rg -qix -- "$4"; then
+        echo "Windows does not enumerate $4. Connect the USART6 adapter and select its COM port." >&2
+        exit 1
+    fi
+    for ((i=1; i<=$5; i++)); do
+        session="$out/run-$i"
+        mkdir "$session"
+        "${UNI_TRACE_CLI:-build/cli/debug/uni-cli}" capture-trace --hardware "$elf" "$session" --uart "$4"
+        convert "$session" '' freertos-console-hardware
+    done
+    python3 tools/check-tonbandgeraet.py baseline "$out" "$5"
+    printf 'Physical USART6 timing artifacts %s\n' "$out"
+    exit 0
+fi
+
 if [[ ${3:-} == --hardware ]]; then
     "${UNI_TRACE_CLI:-build/cli/debug/uni-cli}" capture-trace --hardware "$elf" "$out"
     greeting=
@@ -79,9 +110,10 @@ SCRIPT
     mapfile -t faults < <(tr -d '\r' < "$out/renode.log" | sed -n 's/^\(0x[0-9A-Fa-f]\{8\}\)$/\1/p')
     [[ "${faults[*]}" == "0x00000000 0x00000000" ]] || { echo "Unexpected fault status. See $out/renode.log"; exit 1; }
 fi
-python3 tools/check-tonbandgeraet.py extract "$out" "$greeting"
-"$cli" --Werror dump --mode "$mode" "$out/trace.bin" >"$out/events.jsonl" 2>"$out/decode.log"
-python3 tools/check-tonbandgeraet.py verify "$out" "$profile"
-"$cli" --Werror conv --mode "$mode" --output "$out/uni.perfetto-trace" "$out/trace.bin" >"$out/conversion.log" 2>&1
-test -s "$out/uni.perfetto-trace"
+convert "$out" "$greeting" "$profile"
+if [[ "$profile" == freertos-console ]]; then
+    python3 tools/simulate-console-live.py "$elf" "$out/live/run-1"
+    convert "$out/live/run-1" '' freertos-console-uart
+    python3 tools/check-tonbandgeraet.py baseline "$out/live" 1
+fi
 printf 'Timing artifacts %s\n' "$out"

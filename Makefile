@@ -17,6 +17,7 @@ PIO_TARGETS := pio-arduino pio-stm32cube pio-cmsis pio-libopencm3 pio-zephyr
 ARDUINO_CLI ?= arduino-cli
 ARDUINO_FQBN := STMicroelectronics:stm32:GenF7:pnum=GENERIC_F746ZGTX,xserial=none,usb=none
 ARDUINO_TARGET := build/arduino/HelloUni.ino
+USB_CDC_BUILD_DIR ?= $(CURDIR)/build/arduino-usb-cdc
 RUST_TRIPLE := thumbv7em-none-eabihf
 RUST_BUILD_DIR ?= $(CURDIR)/build/rust/cargo
 TONBAND_ROOT ?=
@@ -36,10 +37,13 @@ LINK = -Tfirmware/stm32f746.ld -Wl,--gc-sections,-z,noexecstack,-Map,$(@:.elf=.m
 export TMPDIR ?= $(CURDIR)/.cache/tmp
 
 .PHONY: all stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check freertos threadx libopencm3 riot chibios zephyr nuttx micropython mbed-os nanoframework nanoframework-native platformio $(PIO_TARGETS) cli deps-stm32cube check-sdk check-microzig
-.PHONY: tband-stm32cube freertos-console deps-segger systemview-elf systemview-cli
+.PHONY: tband-stm32cube freertos-console deps-segger systemview-elf systemview-cli arduino-usb-cdc
 all: stm32cube arduino rust swift cli
 stm32cube: build/stm32cube/hello.bin build/stm32cube/hello.hex
 arduino: $(ARDUINO_TARGET).bin $(ARDUINO_TARGET).hex
+arduino-usb-cdc: | .cache/tmp
+	$(ARDUINO_CLI) compile --optimize-for-debug --fqbn 'STMicroelectronics:stm32:GenF7:pnum=GENERIC_F746ZGTX,xserial=none,usb=CDCgen' \
+		--build-path "$(USB_CDC_BUILD_DIR)" --jobs 4 examples/arduino/UsbCdcUni
 rust: build/rust/hello.bin build/rust/hello.hex
 swift: build/swift/hello.bin build/swift/hello.hex
 zig: build/zig/hello.bin build/zig/hello.hex

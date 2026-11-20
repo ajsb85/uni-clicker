@@ -1,7 +1,9 @@
 """Extract and validate the UNI Clicker timing snapshots."""
 
+import csv
 import json
 from pathlib import Path
+from statistics import median
 import struct
 import sys
 
@@ -31,7 +33,8 @@ def timeline(events, category):
                 yield name, record["ts"], fields
 
 
-def verify_console(directory, base, events):
+def verify_console(directory, base, events, profile):
+    strict = profile == "freertos-console"
     rtos = list(timeline(events, "FreeRTOS"))
     metadata = [frame["FreeRTOSMetadata"] for frame in events if "FreeRTOSMetadata" in frame]
     queues = {item["QueueName"]["queue_id"] for item in metadata
@@ -44,22 +47,54 @@ def verify_console(directory, base, events):
                     if kind in (send, receive) and fields["queue_id"] == queue]
     normal = [(send, 1), (receive, 0)]
     burst = [(send, depth) for depth in range(1, 5)] + [(receive, depth) for depth in range(3, -1, -1)]
-    require(transactions == normal * 9 + burst + normal * 3, f"unexpected queue events {transactions}")
-    sequence = [*range(1, 14), 20, 21, 22]
     markers = [[(fields["val"], ts) for kind, ts, fields in base
                 if kind == "Valmarker" and fields["valmarker_id"] == marker] for marker in (0, 1)]
-    require(all([index for index, _ in pairs] == sequence for pairs in markers),
+    sent, received = ([index for index, _ in pairs] for pairs in markers)
+    expected = [*range(1, 14), 20, 21, 22]
+    if not strict:
+        status = json.loads((directory / "console.json").read_text())
+        burst_sequences = [index for index in sent if 10 <= index <= 19]
+        require(burst_sequences == sorted(set(burst_sequences))
+                and len(burst_sequences) == status["burst_replies"],
+                "UART replies disagree with the burst trace")
+        expected = [*range(1, 10), *burst_sequences, 20, 21, 22]
+        depth = 0
+        for kind, size in transactions:
+            depth += 1 if kind == send else -1
+            require(size == depth and 0 <= depth <= 4, f"unexpected queue depth {size}")
+        require(depth == 0 and len(transactions) == 2 * len(expected),
+                "UART queue trace is incomplete")
+    else:
+        require(transactions == normal * 9 + burst + normal * 3, f"unexpected queue events {transactions}")
+    require(sent == received == expected,
             "USART6 enqueue and dequeue sequences differ")
-    rows = ["sequence\tenqueue_us\tdequeue_us\tlatency_us"]
+    rows = ["sequence\tenqueue_us\tdequeue_us\tlatency_us\tworkload"]
     maximum = 0
     for (index, enqueued), (_, dequeued) in zip(*markers):
         latency = dequeued - enqueued
-        budget = 1500 if 10 <= index <= 13 else 500
-        require(0 < latency <= budget, f"command {index} latency {latency} us outside 1–{budget} us")
-        rows.append(f"{index}\t{enqueued}\t{dequeued}\t{latency}")
+        workload = "burst" if 10 <= index <= 19 else "isolated"
+        budget = 1500 if workload == "burst" else 500
+        require(0 < latency <= budget if strict else latency >= 0,
+                f"unexpected command {index} latency {latency} us")
+        rows.append(f"{index}\t{enqueued}\t{dequeued}\t{latency}\t{workload}")
         maximum = max(maximum, latency)
     (directory / "latency.tsv").write_text("\n".join(rows) + "\n")
-    print(f"Verified {len(sequence)} IRQ-to-task deliveries in Renode. Maximum latency {maximum} us.")
+    environment = "on the board" if profile.endswith("-hardware") else "in Renode"
+    print(f"Verified {len(expected)} IRQ-to-task deliveries {environment}. Maximum latency {maximum} us.")
+
+
+def baseline(directory, repeat):
+    buckets = {"isolated": [], "burst": []}
+    runs = []
+    for i in range(1, int(repeat) + 1):
+        run = directory / f"run-{i}"
+        runs.append(json.loads((run / "console.json").read_text()))
+        with (run / "latency.tsv").open() as values:
+            for row in csv.DictReader(values, delimiter="\t"):
+                buckets[row["workload"]].append(int(row["latency_us"]))
+    summary = {name: {"samples": len(values), "min_us": min(values), "median_us": median(values),
+                      "max_us": max(values)} for name, values in buckets.items()}
+    (directory / "baseline.json").write_text(json.dumps({"runs": runs, **summary}, indent=2) + "\n")
 
 
 def verify(directory, profile):
@@ -68,13 +103,13 @@ def verify(directory, profile):
         event["BaseMetadata"]["TsResolutionNs"]["ns_per_ts"]
         for event in events if "TsResolutionNs" in event.get("BaseMetadata", {})
     ]
-    console = profile == "freertos-console"
+    console = profile.startswith("freertos-console")
     require(resolutions == [1_000 if console else 1_000_000], f"unexpected timestamp units {resolutions}")
     base = list(timeline(events, "Base"))
     require(all(fields["cnt"] == 0 for name, _, fields in base if name == "DroppedEvtCnt"),
             "trace reports dropped events")
     if console:
-        return verify_console(directory, base, events)
+        return verify_console(directory, base, events, profile)
     heartbeats = [(ts, fields["val"]) for kind, ts, fields in base
                   if kind == "Valmarker" and fields["valmarker_id"] == 0]
     require([value for _, value in heartbeats] == [1, 2], f"unexpected heartbeat trace {heartbeats}")
@@ -115,4 +150,4 @@ def verify(directory, profile):
 
 if __name__ == "__main__":
     action, output, parameter = sys.argv[1:]
-    {"extract": extract, "verify": verify}[action](Path(output), parameter)
+    {"extract": extract, "verify": verify, "baseline": baseline}[action](Path(output), parameter)

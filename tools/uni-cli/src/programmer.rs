@@ -120,7 +120,7 @@ fn probe_rs_flash(firmware: Firmware) -> Result<()> {
     probe_rs_flash_elf(&tool("PROBE_RS", "probe-rs"), &firmware.artifact("elf"))
 }
 
-pub(super) fn capture_trace(elf: &Path, directory: &Path) -> Result<()> {
+pub(super) fn capture_trace(elf: &Path, directory: &Path, uart: Option<&str>) -> Result<()> {
     let symbols = read_stdout(
         Command::new("arm-none-eabi-nm")
             .args(["-S", "--defined-only"])
@@ -159,6 +159,16 @@ pub(super) fn capture_trace(elf: &Path, directory: &Path) -> Result<()> {
 
     let program = tool("PROBE_RS", "probe-rs");
     probe_rs_flash_elf(&program, elf)?;
+    if let Some(port) = uart {
+        let reset = probe_rs(&program, "reset");
+        run(Command::new("python3")
+            .arg("tools/console_uart.py")
+            .args(["--port", port, "--trace", "--output"])
+            .arg(directory)
+            .arg("--")
+            .arg(reset.get_program())
+            .args(reset.get_args()))?;
+    }
     let started = Instant::now();
     let length = loop {
         let output = probe_rs_words(&program, "b32", address, "1")?;
@@ -188,6 +198,12 @@ pub(super) fn capture_trace(elf: &Path, directory: &Path) -> Result<()> {
     let faults = probe_rs_words(&program, "b32", 0xe000ed28, "2")?;
     if !faults.split_whitespace().eq(["00000000", "00000000"]) {
         return Err(format!("hardware trace fault status: {}", faults.trim()).into());
+    }
+    if uart.is_some() {
+        let gpio = probe_rs_words(&program, "b32", 0x40020c14, "1")?;
+        if u32::from_str_radix(gpio.trim(), 16)? & (1 << 7) != 0 {
+            return Err("PD7 is high after the console requested led off".into());
+        }
     }
     println!("Read {length} trace bytes over SWD, CFSR and HFSR clear");
     Ok(())

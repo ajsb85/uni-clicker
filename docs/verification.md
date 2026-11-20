@@ -152,3 +152,9 @@ The Renode TIM2 trace measured 81–82 µs for isolated commands and 388–402 �
 The Cortex-M7 demo used SEGGER SystemView at `92ca7a81` and RTT at `9106eaa3`. Renode verified the USART6 greeting, the exact RTT terminal greeting on channel 0, the Start and Stop commands on channel 1, and three PD7 markers in a 900 ms recording. The resulting 117-byte recording decoded into 10 events. Renode reported clear CFSR and HFSR.
 
 On the physical UNI Clicker, Windows OpenOCD flashed and verified the same ELF with ST-LINK. It found the RTT control block using the ELF symbol and streamed channel 1 to the WSL Rust decoder. A two-second capture produced 147 bytes, 15 decoded events, and eight PD7 markers. Both captures showed 250 ms between markers and zero dropped events. The physical check also verified the 22-byte RTT terminal greeting from SRAM. [Reproduction commands and artifact paths](../AGENT.MD#systemview-and-rtt)
+
+## Live console runner and USB-C CDC
+
+The host UART driver passed the split-input, line-ending, malformed-input, burst accounting, and recovery checks against the live Renode USART6. The regular FreeRTOS console also passed its physical SWD boot check. Windows rejected an absent COM port before the hardware trace stage opened the probe.
+
+The separate Arduino USB CDC image built with STM32duino 3.1.0 and passed OpenOCD flash readback. GDB stopped at `setup()` and the ready-state watchpoint, then confirmed PB15 high, PA11/PA12 AF10, the PLL clock configuration, OTG_FS in device mode, and clear CFSR and HFSR. Windows enumerated it as COM4 under `0483:5740`. The host driver checked the USB ping reply, both LED commands and the invalid-command response. Direct SWD reads confirmed PD7 high after `led on` and low after `led off`. [USB wiring and reproduction](usb-cdc.md)

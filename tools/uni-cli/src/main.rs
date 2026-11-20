@@ -30,7 +30,10 @@ const HELP: &str = "uni-cli <command> [firmware] [endpoint]
   test rust --hardware                    Run the Rust board regression suite
   check <firmware> [--trace] [--hardware-trace] [--hardware [--programmer probe-rs]]
                                           Build, analyze, simulate, and save a report
-  capture-trace --hardware <elf> <dir>    Flash and recover a bounded SWD snapshot
+  capture-trace --hardware <elf> <dir> [--uart COMx]
+                                          Flash and recover a bounded SWD snapshot
+  check freertos-console --hardware-trace --uart COMx [--runs N]
+                                          Run the physical USART6 latency baseline
   systemview [--hardware]                Verify SystemView and RTT capture
 
 Profiles: stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check
@@ -529,7 +532,12 @@ fn execute(args: &[String]) -> Result<()> {
             run(&mut Command::new("tools/test-rust-board.sh"))
         }
         [cmd, option, elf, directory] if cmd == "capture-trace" && option == "--hardware" => {
-            programmer::capture_trace(Path::new(elf), Path::new(directory))
+            programmer::capture_trace(Path::new(elf), Path::new(directory), None)
+        }
+        [cmd, option, elf, directory, uart, port]
+            if cmd == "capture-trace" && option == "--hardware" && uart == "--uart" =>
+        {
+            programmer::capture_trace(Path::new(elf), Path::new(directory), Some(port))
         }
         [cmd, flags @ ..] if cmd == "systemview" => {
             run(Command::new("tools/check-systemview.sh").args(flags))

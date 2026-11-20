@@ -48,6 +48,7 @@ Add `--hardware` to flash the connected STM32F746ZG via ST-LINK after the simula
 - `uni-cli check stm32cube --trace` and `uni-cli check freertos --trace` add Tonbandgeraet timing assertions and save a Perfetto artifact.
 - `uni-cli check stm32cube --hardware-trace` and `uni-cli check freertos --hardware-trace` program the trace ELF through probe-rs, then recover and validate the SRAM recording over SWD. The artifacts are in the report's `hardware-trace/` directory.
 - `uni-cli check freertos-console --trace` tests USART6 commands, malformed input and queue saturation in Renode. It saves per-command IRQ-to-task measurements in `trace/latency.tsv`.
+- `uni-cli check freertos-console --hardware-trace --uart COM7 --runs 3` drives the physical USART6 port and records an IRQ-to-task latency baseline using the selected Windows 3.3 V adapter.
 - `uni-cli test rust --hardware` runs the separate embedded-test ELF and captures RTT messages.
 - `uni-cli systemview` checks SEGGER SystemView recording and RTT terminal output in Renode. Add `--hardware` to flash and capture through ST-LINK and OpenOCD. [SystemView workflow](AGENT.MD#systemview-and-rtt)
 - `uni-cli check nuttx --hardware` and `uni-cli check micropython --hardware` use runtime-specific debugger checks. MicroPython flashes the split Intel HEX.
@@ -55,6 +56,8 @@ Add `--hardware` to flash the connected STM32F746ZG via ST-LINK after the simula
 Combine `--trace`, `--hardware-trace` and `--hardware` on STM32Cube or FreeRTOS to check the instrumented image in Renode and on the board, then program and verify the regular firmware. [Capture procedure and console commands](AGENT.MD#timing-captures-and-usart6-console)
 
 GitHub Actions runs the Rust greeting, the three Tonbandgeraet checks, and the SystemView RTT check in Renode. It uploads the verification reports and simulation artifacts. [Firmware simulation workflow](.github/workflows/firmware.yml)
+
+The `arduino-usb-cdc` example uses the UNI Clicker USB-C connector in device mode for a Windows virtual COM console. [USB-C wiring and verification](docs/usb-cdc.md)
 
 ## Flash and debug
 

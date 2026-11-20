@@ -1,6 +1,7 @@
 /.cache/
 /build/
 /SystemView/
+__pycache__/
 **/target/
 /examples/zig/zig-pkg/
 /examples/frameworks/riot/bin/
