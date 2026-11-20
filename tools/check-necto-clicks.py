@@ -5,7 +5,6 @@ import argparse
 import hashlib
 import json
 import math
-import re
 import shutil
 from pathlib import Path
 import subprocess
@@ -32,6 +31,21 @@ def monitor_path(path):
     if any(char in name for char in ('\\', '\r', '\n')):
         raise ValueError(f"cannot quote Renode path {path}")
     return '"' + name.replace('"', '\\"') + '"'
+
+
+def renode_commands(commands, register_log):
+    for command in commands:
+        if isinstance(command, str):
+            yield command
+            continue
+        address = int(command["read_u32"], 0)
+        file_path = json.dumps(str(register_log), ensure_ascii=False)
+        # Embedded Renode can drop Monitor output from nested include commands.
+        # The file preserves register evidence for both launchers.
+        python = ("from System.IO import File; "
+                  f"File.AppendAllText({file_path}, "
+                  f"str(monitor.Machine.SystemBus.ReadDoubleWord({address:#x})) + chr(10))")
+        yield f"python {monitor_path(python)}"
 
 
 def select_firmware(case, definition, compiler, out, build_index):
@@ -71,6 +85,7 @@ def verify(case, compiler, report, cli, renode, build_index):
     for run in definition["runs"]:
         log = out / f'{run["name"]}.log'
         uart = log.with_suffix(".uart")
+        registers = log.with_suffix(".registers")
         script = log.with_suffix(".resc")
         commands = []
         if model := run.get("model"):
@@ -81,7 +96,7 @@ def verify(case, compiler, report, cli, renode, build_index):
             f"sysbus LoadELF {monitor_path(elf)}",
             "cpu VectorTableOffset 0x08000000",
             f"sysbus.usart6 CreateFileBackend {monitor_path(uart)} true",
-            *run["commands"],
+            *renode_commands(run["commands"], registers),
             'mach rem "uni-clicker"',
         ])
         if renode:
@@ -93,10 +108,9 @@ def verify(case, compiler, report, cli, renode, build_index):
                 raise SystemExit(f"{case.stem}/{run['name']} did not finish. See {log}")
         else:
             capture([cli, "renode-script", script], log, 45)
-        if "monitor_words" in run:
-            words = [int(line.strip(), 16) for line in log.read_text().splitlines()
-                     if re.fullmatch(r"0x[0-9a-fA-F]{8}", line.strip())]
-            if words != run["monitor_words"]:
+        if "register_words" in run:
+            words = [int(line) for line in registers.read_text().splitlines()] if registers.exists() else []
+            if words != run["register_words"]:
                 raise SystemExit(f"{case.stem}/{run['name']} register mismatch: {words!r}. See {log}")
         observed = [line.strip() for line in uart.read_text().splitlines()] if uart.exists() else []
         if observed != run["uart"]:
