@@ -50,7 +50,8 @@ Paths in the right column are relative to `$UNI_WINDOWS_ROOT` unless prefixed wi
 | Vendor classic ARM compiler | `mikroC PRO for ARM/mikroCARM.exe`, `Defs/STM32F746ZG.c`, `Uses/`, `Examples/ST/`, `mikroc_PRO_ARM.chm` in that install |
 | NECTO Studio and mikroSDK | `necto-studio/NECTOStudio/bin/NECTOStudio.exe`, `NECTOStudio7/templates/`, `NECTOStudio7/databases/necto_db.db`, `NECTOStudio7/packages/sdk/mikroSDK_v2/src` |
 | NECTO GDB and ST tools | `NECTOStudio7/packages/debuggers/gdb/arm/bin/`, `NECTOStudio7/packages/st_tools/{cubeprogrammer,stlinkgdbserver}/tools/` |
-| MikroE programmer and alternate debug backends | `mikroProg Suite For ARM/`, `mikroprog-stm32-manual-v100.pdf`, `CODEGRIP/CODEGRIP Suite/{CodegripCmd,CodegripGdbServer}.exe`, `NECTOStudio7/packages/programmers/{codegrip,segger}/` |
+| MikroE programmer and alternate debug backends | `mikroProg Suite For ARM/`, `mikroProg_Suite_for_ARM_v161_setup.exe`, `mikroprog-stm32-manual-v100.pdf`, `mikroC PRO for ARM/mikroProg Suite installer/Drivers/`, `necto-studio/NECTOStudio/bin/plugins/mikroprog_arm.dll`, `CODEGRIP/CODEGRIP Suite/{CodegripCmd,CodegripGdbServer}.exe` |
+| NECTO programmer packages | `NECTOStudio7/packages/programmers/{codegrip,segger}/` |
 | Installer and bootloader packages | `mikroe-software/`, including the USB HID mikroBootloader manual; `mikroC PRO for PIC/` is for a different architecture |
 | Renode and upstream examples | `.cache/tools/renode/renode` and `renode-test`; `renode/renode/{platforms,scripts,tests}`, `renode/renode-docs/source`, `renode/renode-infrastructure/`, `simulation-resources.txt` |
 | .NET native runtime and community board | `.cache/sdk-native/nano-e903edb`, `.cache/sdk-native/nano-community`, and `.uni-clicker-lab-cache/frameworks/nf-interpreter-e903edb.tar.gz` |
@@ -87,6 +88,8 @@ For vendor executables, use `wslpath -w` when passing an image or directory to W
 ## Develop, verify, and debug
 
 For unattended firmware checks, run `"$cli" check <profile>` with the bench environment loaded. The command builds, inspects the image, runs the Renode smoke test and saves per-stage logs alongside `report.tsv` under `.cache/verification/check.*`. Read the `result` row and open the failing stage's log before retrying. Checks for the same profile take a shared lock file so their build artifacts stay consistent. Add `--hardware` for an authorized flash and GDB verification after simulation passes. The hardware stage uses the bench probe lock and releases OpenOCD when done. [CLI usage](README.md#run-a-firmware-check)
+
+Use `uni-cli check stm32cube` for STM32 bring-up and `uni-cli check <profile>` for changes to a specific toolchain. On the 2026-11-20 bench run, a warmed STM32Cube check took 4.5 seconds and the licensed mikroC build and check took 8.6 seconds. Run targeted Renode GPIO or GDB scenarios when a smoke check needs investigation. Then use CubeProgrammer and OpenOCD on the physical board for peripheral, timing and fault checks. [Renode scenarios](docs/renode.md)
 
 1. Build the changed profile with `make <profile>`. Use `make all` for the standard compiler set and the individual targets for additional SDKs. Keep the ELF with debug information, BIN, and HEX from the same build. Use `arm-none-eabi-nm -n`, `readelf -l`, `objdump -dSl`, and `uni-cli analyze` before touching hardware.
 2. Run `tools/simulate.sh <profile>` and the relevant [Renode scenario](docs/renode.md). The minimum hello firmware convention is the banner at boot and each second, PD7 transitions each 500 ms, and 32-bit `uni_heartbeat` and `uni_tx_bytes` symbols.

@@ -99,8 +99,26 @@ The native image was flashed and debugged through the detected ST-LINK V2. The i
 
 ## Separate classic mikroProg probe
 
+The workspace contains mikroProg Suite for ARM 1.6.1 and its installer `mikroProg_Suite_for_ARM_v161_setup.exe` at the Windows workspace root. The copy in `mikroC PRO for ARM/mikroProg Suite installer/` has the same SHA-256. Its sibling `Drivers/` contains ST-LINK, J-Link and Stellaris/Tiva bundles. The manual names a separate classic STM32 driver archive. The current NECTO installation also contains `necto-studio/NECTOStudio/bin/plugins/mikroprog_arm.dll`.
+
 Windows enumerated the ST-LINK V2 and the HID compiler key during the framework and PlatformIO runs. The compiler key's device description was `mE Dongle mC ARM`. A separate classic mikroProg, CODEGRIP or FTDI probe was absent from the Windows inventory. The physical flash and debugger results here use the ST-LINK V2.
 
 On 2026-11-20, Windows recorded a USB reconnect for `STM32 STLink` (`0483:3748`). The HID key (`1011:0022`) remained present. The FTDI library bundled with mikroProg Suite independently returned zero attached devices. Use `DEVPKEY_Device_LastArrivalDate` and `DEVPKEY_Device_BusReportedDeviceDesc` in `Get-PnpDeviceProperty` to identify which device was reconnected before changing the SWD switch or starting the classic programmer.
 
 When the classic probe appears, use the local `mikroprog-stm32-manual-v100.pdf` and `mikroProg Suite For ARM/mikroProg Suite for ARM.exe`. For the classic programmer connection, the UNI Clicker switch is SW1 OFF/down. Confirm the probe and MCU in the programmer before writing an image. The existing ST-LINK setup uses SW1 ON/up. [Bench connector and switch details](../AGENT.MD)
+
+### Headless probe checks
+
+```bash
+source tools/bench-env.sh
+"$UNI_WINDOWS_ROOT/mikroProg Suite For ARM/ST-LINK_CLI.exe" -List
+"$UNI_WINDOWS_ROOT/mikroProg Suite For ARM/ST-LINK_CLI.exe" -c SWD Freq=240 HOTPLUG -r32 0x08000000 8
+build/cli/debug/uni-cli probe
+(
+    cd "$UNI_WINDOWS_ROOT/CODEGRIP/CODEGRIP Suite"
+    ./CodegripCmd.exe scan --usb
+    ./CodegripGdbServer.exe --help
+)
+```
+
+The bundled ST-LINK CLI 3.1.0 listed one V2 probe with firmware `V2J40S0`, detected STM32 device ID `0x449`, and read the first two flash words in hot-plug mode. The length argument `8` displayed two 32-bit words with this CLI build. CubeProgrammer independently read device ID `0x449` and 1 MiB of flash. `CodegripCmd.exe` returned help and completed its USB-only scan with an empty device list. `CodegripGdbServer.exe` printed its options. A CODEGRIP session and the classic mikroProg or NECTO ARM programmer connection still require a matching probe on the bench.

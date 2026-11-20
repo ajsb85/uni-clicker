@@ -104,3 +104,9 @@ All five environments built with PlatformIO Core 6.2.0, passed the PlatformIO `r
 | Zephyr | `0x08000f84` | 33, 33, 66 |
 
 The batch files are in `.cache/verification/bench.57p0Ky` and `.cache/verification/bench.p8K6L2`. [PlatformIO reproduction](platformio.md)
+
+## Headless CLI recheck on 2026-11-20
+
+`uni-cli check stm32cube` took 4.5 seconds with a current build and 7.4 seconds when it rebuilt the firmware. `uni-cli check mikroc` ran the licensed Windows compiler and passed in 8.6 seconds. These checks include ELF analysis and Renode smoke output. [CLI workflow](../README.md#run-a-firmware-check)
+
+`uni-cli check nanoframework-native --hardware` passed all stages in 224 seconds, including 137 seconds for the physical stage. The build produced the same 1 MiB image as the prior run. CubeProgrammer verified the flash contents, and the OpenOCD and GDB check read both exact managed greetings and verified the fault registers. The per-stage logs are under `.cache/verification/check.nanoframework-native.1795137318837577190.1009303`. [Native build and verification](frameworks.md#native-uni-clicker-image)
