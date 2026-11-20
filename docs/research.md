@@ -43,6 +43,21 @@ STM32CubeF7 is pinned at `767d083e` (v1.17.2) with the HAL and CMSIS Device subm
 
 The observed USB device presented as ST-LINK V2 (`0483:3748`, firmware `V2J40S0`). Windows had no separately identified mikroProg endpoint. The verified programming path is the ST-LINK interface observed by CubeProgrammer and OpenOCD. The board supports the vendor programmer through a different SW1 setting, which remains a separate path to validate.
 
-Native Rust probe access is a follow-on backend. It would need the probe passed through to Linux or a compatible native Windows build of the host CLI. Other useful extensions are structured ELF/DWARF analysis, serial transcript checks on a wired bench, and reusable GDB machine-interface sessions. The present tool delegates operations to the same executables used in the verified workflow.
+Native Windows `probe-rs` was verified on the existing ST-LINK WinUSB connection. WSL launches the native flasher with an ELF path translated by `wslpath -w` and connects `rust-gdb` to the probe-rs GDB server over loopback. The general `uni-cli` hardware workflow uses CubeProgrammer and OpenOCD. [Arduino and native Rust verification](verification.md#arduino-and-native-rust-programming)
+
+## probe-rs source checkouts
+
+The organization inventory on 2026-11-20 had 38 public repositories. All were cloned under `$UNI_WINDOWS_ROOT/probe-rs` with `git clone --depth 1 --no-tags`. The 37 repositories with a HEAD expose one commit each. `probe-rs-ppa` is empty. Local receipts in `.cache/probe-rs-org/revisions.tsv` record each commit. [probe-rs organization](https://github.com/probe-rs)
+
+| Checkout | Use on this bench |
+| --- | --- |
+| `probe-rs` at `187f19a8` | Source for the flasher, explicit chip selection, RTT runner, GDB server and DAP tooling. The installed Windows release 0.32.0 was verified for flashing and GDB. |
+| `rtt-target` at `08309db5` | Add RTT or defmt output to a Rust firmware profile and receive it over SWD through `probe-rs run` or `attach`. The Cortex-M examples show the target-side setup. |
+| `embedded-test` at `48fe6ecf` | Port `examples/stm32f767` to the F746ZG for board-side test cases. The runner flashes one ELF and selects each case through semihosting. |
+| `probe-rs/probe-rs-rpc` and `probe-rs-rpc-client` | The upstream checkout contains a persistent hardware-service protocol and client with schema compatibility checks. Evaluate them together from the same revision for an agent-controlled debug session. The installed release supplies the verified CLI and GDB path. |
+| `cmsis-pack-manager`, `flash-algorithm`, `flash-algorithm-template` | Inspect chip packs or build a custom flash algorithm when adding a target. The native probe-rs registry already includes the bench STM32F746ZG. |
+| `hive` and `hive-software` | References for scaling hardware testing to a fixture with multiple boards and programmers. |
+
+The standalone `cargo-flash`, `cargo-embed`, `target-gen`, and `probe-rs-rtt` repositories are archived. Use the commands shipped with the verified probe-rs release for this bench.
 
 The Renode model instantiates a Cortex-M7, flash, SRAM, NVIC, RCC, GPIO and USART6. It can validate the exact greeting bytes without hardware. USB, oscillator tolerances, the programming mux, signal quality and external serial wiring require physical observations. [Renode STM32F746 model](https://github.com/renode/renode/blob/master/platforms/cpus/stm32f746.repl)

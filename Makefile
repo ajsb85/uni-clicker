@@ -18,6 +18,7 @@ ARDUINO_CLI ?= arduino-cli
 ARDUINO_FQBN := STMicroelectronics:stm32:GenF7:pnum=GENERIC_F746ZGTX,xserial=none,usb=none
 ARDUINO_TARGET := build/arduino/HelloUni.ino
 RUST_TRIPLE := thumbv7em-none-eabihf
+RUST_BUILD_DIR ?= $(CURDIR)/build/rust/cargo
 
 CMSIS := $(STM32CUBE_F7)/Drivers/CMSIS
 DEVICE := $(CMSIS)/Device/ST/STM32F7xx
@@ -95,8 +96,8 @@ $(ARDUINO_TARGET).elf: examples/arduino/HelloUni/HelloUni.ino Makefile | .cache/
 	$(ARDUINO_CLI) compile --optimize-for-debug --fqbn "$(ARDUINO_FQBN)" --build-path "$(CURDIR)/build/arduino" --jobs 4 examples/arduino/HelloUni
 
 build/rust/hello.elf: examples/rust/src/main.rs examples/rust/build.rs examples/rust/memory.x examples/rust/Cargo.toml examples/rust/Cargo.lock Makefile | .cache/tmp build/rust
-	cargo build --locked --release --target $(RUST_TRIPLE) --manifest-path examples/rust/Cargo.toml --target-dir build/rust/cargo
-	cp "build/rust/cargo/$(RUST_TRIPLE)/release/uni-rust-hello" "$@"
+	cargo build --locked --release --target $(RUST_TRIPLE) --manifest-path examples/rust/Cargo.toml --target-dir "$(RUST_BUILD_DIR)"
+	cp "$(RUST_BUILD_DIR)/$(RUST_TRIPLE)/release/uni-rust-hello" "$@"
 
 build/swift/hello.o: examples/swift/Hello.swift examples/swift/CBoard/board.h examples/swift/CBoard/module.modulemap Makefile | .cache/tmp build/swift
 	"$(SWIFTC)" -target armv7em-none-none-eabi -enable-experimental-feature Embedded -wmo -parse-as-library -Osize -g -Xfrontend -no-allocations -Xfrontend -function-sections -Xfrontend -dwarf-version=4 -Xfrontend -no-clang-module-breadcrumbs -module-cache-path "$(CURDIR)/.cache/swift-modules" -Xcc -ffreestanding -I examples/swift/CBoard -c "$<" -o "$@"

@@ -69,6 +69,8 @@ build/cli/debug/uni-cli debug stm32cube
 
 For a serialized flash and GDB run with automatic probe-server cleanup, use `tools/verify-bench.sh stm32cube zig` after building those profiles. The NECTO Windows ST-LINK GDB server is available through `debug/start-st-gdbserver.sh`.
 
+The bench also supports the native Arduino CLI SWD upload recipe with a Windows CubeProgrammer adapter and the native Windows probe-rs flasher and GDB server for Rust. [Arduino commands](AGENT.MD#arduino-cli-upload-and-debugger) · [Rust commands](AGENT.MD#native-rust-flashing-and-debugging)
+
 ## Simulate
 
 With Renode on PATH, or `RENODE` set to its executable, run `tools/simulate.sh stm32cube`. The firmware profiles use the same offline Cortex-M7 model. The native .NET profile asserts the managed greeting at its nanoCLR dispatch point and captures binary Wire Protocol traffic from USART6.

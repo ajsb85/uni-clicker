@@ -44,7 +44,10 @@ Paths in the right column are relative to `$UNI_WINDOWS_ROOT` unless prefixed wi
 | STM32CubeF7 HAL, CMSIS and startup | `.cache/vendor/STM32CubeF7` at `767d083e`; run `make deps-stm32cube` to reconstruct it |
 | Arduino source, variants, recipes and index | `stm32duino/Arduino_Core_STM32/`, `BoardManagerFiles/`, `Arduino_Tools/`, `stm32_svd/`, `CMake_workspace/` inside `stm32duino/` |
 | Arduino build packages | `.cache/arduino-fast-data` has the F7 release files for STM32duino 3.1.0; `.uni-clicker-lab-cache/arduino-data` contains the full installed core and tools |
+| Arduino flasher and debugger | In the full Arduino cache under `packages/STMicroelectronics`, use `tools/STM32Tools/2.5.1/stm32CubeProg.sh`, `tools/xpack-arm-none-eabi-gcc/14.2.1-1.1/bin/arm-none-eabi-gdb`, and the F746 SVD under `tools/STM32_SVD/1.22.0` |
 | Rust references | `stm32-rs/stm32f7xx-hal/` and adjacent PAC/HAL repositories; local target `thumbv7em-none-eabihf` |
+| Native Rust programmer and debugger | `.uni-clicker-lab-cache/probe-rs/v0.32.0/` contains `probe-rs.exe`, `cargo-flash.exe`, and `cargo-embed.exe`. WSL provides `rust-gdb` through rustup and `gdb-multiarch` |
+| probe-rs organization sources | `probe-rs/` has all 38 public repositories. The WSL inventory and checkout revisions are in `.cache/probe-rs-org/{repositories,revisions}.tsv` |
 | Swift examples and installed compiler | `swift-embedded-examples/stm32-{blink,uart-echo}/`, `.uni-clicker-lab-cache/swift/usr/bin/swiftc` |
 | Zig and MicroZig | `zig` on WSL PATH, version 0.17.1; `microzig/` commit `f629434`; `port/stmicro/stm32/src/Chips.zig` has the F746ZG target |
 | Vendor classic ARM compiler | `mikroC PRO for ARM/mikroCARM.exe`, `Defs/STM32F746ZG.c`, `Uses/`, `Examples/ST/`, `mikroc_PRO_ARM.chm` in that install |
@@ -114,6 +117,40 @@ x/wx 0x4001141c
 At a fault, decode SHCSR, CFSR, HFSR, MMFAR and BFAR with RM0385 and PM0253. Save the fault status and exception stack frame before triggering another reset. Use `nm` addresses when GDB starts in a different language context. Use hardware breakpoints in flash and location watchpoints for state words. After `monitor reset halt`, flush the client register cache so GDB reads the new state.
 
 For a source-level regression, keep a known-good ELF and binary, reduce the difference to one clock or peripheral, and compare equivalent instructions, register values and virtual time in Renode before repeating SWD tests. Include the ELF hash, exact compiler and SDK revision, simulator model, probe backend, flash report, and first failing observation in the notes. Use [the verified Renode recipes](docs/renode.md) for exact output, GPIO timing, instruction traces, and GDB.
+
+## Arduino CLI upload and debugger
+
+WSL Arduino CLI 1.5.0 builds the sketch. The Windows host also has Arduino CLI 1.5.1 on PATH. The STM32duino 3.1.0 core exposes STM32CubeProgrammer over SWD, J-Link, serial and DFU, plus OpenOCD ST-LINK and CMSIS-DAP and a Black Magic Probe recipe. This bench verified the Arduino CLI SWD recipe and the packaged Arm GDB client. The Windows ST-LINK driver owns the USB probe.
+
+```bash
+source tools/bench-env.sh
+make arduino
+fqbn=STMicroelectronics:stm32:GenF7:pnum=GENERIC_F746ZGTX,xserial=none,usb=none,upload_method=swdMethod
+arduino-cli debug --info --fqbn "$fqbn" --input-dir "$PWD/build/arduino" examples/arduino/HelloUni
+PATH="$PWD/tools/wsl:$PATH" arduino-cli upload --fqbn "$fqbn" \
+  --input-dir "$PWD/build/arduino" --upload-property upload.freq=400 examples/arduino/HelloUni
+```
+
+The STM32Tools shell recipe invokes `STM32_Programmer.sh` on Linux. The workspace adapter translates the BIN path to Windows, forwards the options to the installed CubeProgrammer, and adds flash verification. Use `debug/start-openocd.sh` to serve GDB on port 3333 after the upload. In a second terminal, invoke the Arm GDB executable from the full Arduino cache with `build/arduino/HelloUni.ino.elf`, connect to `127.0.0.1:3333`, and break on `'setup()'`. The fast Arduino cache has build inputs and metadata. Use the full cache for the packaged GDB, OpenOCD 0.12.0-6 reference, and debugger configuration files. [Bench evidence](docs/verification.md#arduino-and-native-rust-programming)
+
+## Native Rust flashing and debugging
+
+Windows `probe-rs` 0.32.0 connects directly to the existing ST-LINK WinUSB driver. The downloaded release ZIP matches SHA-256 `56fc0564cc23d604b27dc2d57606194159c49f951999f3e47bd2cbffcba64103`. The official release also includes `cargo-flash.exe` and `cargo-embed.exe`. Use the Windows executables for USB access and WSL Cargo and GDB for the build and source debugging. With the workspace SDK cache mounted, `make rust` keeps Cargo intermediates in `.cache/sdk-native/work/rust-hello`. [Official probe-rs release](https://github.com/probe-rs/probe-rs/releases/tag/v0.32.0)
+
+```bash
+source tools/bench-env.sh
+make rust
+connection=(--chip STM32F746ZG --protocol swd --probe 0483:3748 --speed 240 --non-interactive)
+elf=$(wslpath -w "$PWD/build/rust/hello.elf")
+"$PROBE_RS" list
+"$PROBE_RS" download "${connection[@]}" --connect-under-reset --verify "$elf"
+"$PROBE_RS" verify "${connection[@]}" "$elf"
+"$PROBE_RS" gdb "${connection[@]}" --reset-halt --gdb-connection-string 127.0.0.1:1337
+```
+
+Use another WSL terminal to run `RUST_GDB=gdb-multiarch rust-gdb -nx build/rust/hello.elf`. In GDB, run `target remote 127.0.0.1:1337`, set a hardware breakpoint at `main`, and use `stepi`. Stop the GDB server before opening a new probe session. To read CFSR and HFSR, use `"$PROBE_RS" read "${connection[@]}" -f simple-hex b32 0xe000ed28 2`. Direct `probe-rs read` works for those addresses. The probe-rs 0.32.0 GDB stub returned a memory access error for them. Use OpenOCD with `uni-cli verify rust` for the full GPIO/UART and fault-register checks. [Bench evidence](docs/verification.md#arduino-and-native-rust-programming)
+
+Add `--preverify` to the download for repeat runs of the same ELF. The unchanged-image pass took 0.25 seconds. `probe-rs mi meta` emits JSON version and build metadata. On this F746ZG, `mi info` ignored the explicit chip and auto-identification failed. The verified probe commands pass `--chip STM32F746ZG` explicitly. [Organization source review](docs/research.md#probe-rs-source-checkouts)
 
 ## Work on a new peripheral
 
