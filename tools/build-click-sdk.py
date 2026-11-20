@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Compile unmodified Click libraries and examples for UNI Clicker socket 1."""
+"""Compile unmodified Click libraries and examples for UNI Clicker."""
 
 import argparse
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import hashlib
 import json
@@ -17,10 +19,18 @@ ROOT = Path(__file__).resolve().parents[1]
 ADAPTER = ROOT / "examples/necto-click"
 COHORT = ADAPTER / "cohort.json"
 PILOT = ADAPTER / "pilot64.json"
+COMPATIBILITY = ADAPTER / "compatibility.json"
 CACHED_SOURCES = ROOT / ".cache/vendor"
 DRIVER = re.compile(r"[a-z0-9_]+")
 INCLUDES = re.compile(rb'^\s*#\s*include\s*[<"]([a-z0-9_]+)\.h[>"]', re.MULTILINE)
 POSITIONS = re.compile(rb'^\s*#\s*define\s+MIKROBUS_POSITION_\w+\s+MIKROBUS_(\d+)\b', re.MULTILINE)
+EXPLICIT_SOCKETS = re.compile(rb'\bMIKROBUS_(\d+)\b(?=\s*[,\)])')
+LOG_OBJECT = re.compile(rb'\blog_t\s+(\w+)\s*[;=]')
+UART_MEMBER = re.compile(rb'\b(\w+)\s*\.\s*uart\b')
+MATH_BOARDS = {
+    "3dhall9", "irgesture3", "joystick3", "neomesh2", "neomesh868mhz",
+    "neomesh915mhz", "pressure2", "pressure18", "pwrmeter2", "thumbstick2",
+}
 
 # Low-level variants selected by the SDK's STM32F7 CMake rules.
 PERIPHERALS = {
@@ -97,6 +107,65 @@ def dependencies(files):
     return {match.decode() for path in files for match in INCLUDES.findall(path.read_bytes())}
 
 
+def package_inputs(click, include):
+    """Select bundled sources and include roots listed by upstream CMake."""
+    lib = include.parent
+    if click.name == "lriot":
+        files = """
+            transceiver/lr1110_crypto_engine transceiver/lr1110_driver_version
+            transceiver/lr1110_gnss transceiver/lr1110_radio transceiver/lr1110_radio_timings
+            transceiver/lr1110_regmem transceiver/lr1110_system transceiver/lr1110_wifi
+            transceiver/lr1110_lr_fhss modem/lr1110_modem_hal modem/lr1110_modem_driver_version
+            modem/lr1110_modem_gnss modem/lr1110_modem_helper modem/lr1110_modem_lorawan
+            modem/lr1110_modem_system modem/lr1110_modem_wifi common/lr1110_hal
+            common/lr1110_bootloader firmware_update/lr1110_firmware_update
+        """.split()
+        return [include / "driver"], [lib / "src/driver" / f"{file}.c" for file in files], ["SAMPLE_REG_CASE_2"]
+    if click.name == "nfc9":
+        source = lib / "rfal/source"
+        files = """
+            rfal_analogConfig rfal_crc rfal_iso15693_2 rfal_nfc rfal_nfca rfal_nfcb rfal_nfcf rfal_nfcv
+            st25r500/rfal_rfst25r500 st25r500/st25r500 st25r500/st25r500_com st25r500/st25r500_irq
+        """.split()
+        return (
+            [lib / "rfal/include", source, source / "st25r500"],
+            [source / f"{file}.c" for file in files],
+            ["SAMPLE_REG_CASE_2", "ST25R500", "ST25R_POLL_IRQ"],
+        )
+    if click.name in {"ultrasonic3", "ultrasonic4"}:
+        soniclib = lib / "src/invn-soniclib"
+        files = [
+            "chbsp_dummy.c", "ch_api.c", "ch_common.c", "ch_driver.c",
+            "ch_math_utils.c", "ch_log.c", "extra/ch_extra_display_utils.c",
+            "sensor_fw/icu_init/icu_init.c", "sensor_fw/icu_init/icu_init_fw.c",
+            "sensor_fw/icu_gpt/icu_gpt.c", "sensor_fw/icu_gpt/icu_gpt_fw.c",
+        ]
+        defines = [
+            "SAMPLE_REG_CASE_2", "INVN_SONICLIB_INTERNAL_BOARD_CONFIG", "INCLUDE_SHASTA_SUPPORT",
+            "CHIRP_MAX_NUM_SENSORS=1", "CHIRP_NUM_BUSES=1", "CH_LOG_MODULE_LEVEL=5",
+            "CHIRP_SENSOR_INT_PIN=1", "CHIRP_SENSOR_TRIG_PIN=1",
+        ]
+        return [soniclib], [soniclib / "invn/soniclib" / file for file in files], defines
+    return [], [], []
+
+
+def platform_source(source, out, header, changes, result):
+    """Stage a local target branch while retaining the original source and its hash."""
+    original = source.read_text()
+    adapted = original
+    for before, after in changes:
+        if adapted.count(before) != 1:
+            raise BuildError(f"{source.name} no longer matches the {header} target fixture")
+        adapted = adapted.replace(before, after)
+    path = out / source.name
+    path.write_text(f'#line 1 "{source.name}"\n' + adapted)
+    result["platform_source"] = {
+        "header": header, "header_sha256": sha(ADAPTER / header), "original_sha256": sha(source),
+        "path": path.name, "sha256": sha(path),
+    }
+    return path
+
+
 def run(command, log, cwd=ROOT, timeout=120):
     with log.open("a", encoding="utf-8") as stream:
         stream.write(f"$ {shlex.join(command)}\n")
@@ -139,13 +208,15 @@ class Target:
             self.common / "mcu_reg_addresses/STM32/STM32F746ZG",
             self.sdk / "hal/interface", self.sdk / "hal/lib/include", self.sdk / "drv/lib/include",
         ]
-        self.pins = dict(re.findall(r"^#define MIKROBUS_1_MIKROBUS_(\w+)\s+GPIO_(\w+)",
-                                    (ADAPTER / "board.h").read_text(), re.MULTILINE))
+        self.socket_pins = {}
+        for socket, pin, gpio in re.findall(r"^#define MIKROBUS_(\d+)_MIKROBUS_(\w+)\s+GPIO_(\w+)",
+                                           (ADAPTER / "board.h").read_text(), re.MULTILINE):
+            self.socket_pins.setdefault(socket, {})[pin] = gpio
         self.provenance = {
             "target": "stm32f746zg",
             "board": "uni-clicker",
             "socket": 1,
-            "pins": self.pins,
+            "pins": self.socket_pins["1"],
             "compiler": self.version,
             "toolchain": self.toolchain,
             "mikrosdk_revision": git_revision(self.sdk),
@@ -163,7 +234,7 @@ class Target:
             return subprocess.check_output(["wslpath", "-m", str(path)], text=True).strip()
         return str(path)
 
-    def config(self, out, include, modules, imports):
+    def config(self, out, include, modules, imports, uart_log=False):
         includes = [out, include, *self.includes]
         sources = [
             ADAPTER / "board.c", self.stm32 / "src/gpio/hal_ll_gpio.c",
@@ -175,6 +246,8 @@ class Target:
         if modules & GPIO:
             sources.append(self.sdk / "hal/lib/src/lib_hal_gpio/hal_gpio.c")
         defines = []
+        if uart_log:
+            defines.append("-DUNI_CLICKER_UART_LOG")
         for module in sorted(modules):
             if module in PERIPHERALS:
                 _, part, implementation, low_level, flags = PERIPHERALS[module]
@@ -214,6 +287,36 @@ class Target:
             defines.extend(["-D__CONVERSIONS_CHIPS_16BIT_32BIT__", "-D__CONVERSIONS_SET__"])
         flags = [*SHAPE_FLAGS, *defines, *(f"-I{self.path(path)}" for path in includes)]
         return flags, sources
+
+    def middleware(self, name, out):
+        if name == "ethwiz":
+            component = self.sdk / "components/ethernet/w5500_wizip55"
+            bus = self.sdk / "middleware/ethernet/spi"
+            core = self.sdk / "middleware/ethernet/core"
+            net = self.sdk / "middleware/ethernet/net"
+            return [component, bus, core, net], [
+                component / "w5500.c", bus / "eth_bus_spi.c", core / "eth_transport.c", net / "eth_net.c",
+            ]
+        if name == "microsd":
+            drive = self.sdk / "middleware/physical_drive"
+            filesystem = self.sdk / "middleware/filesystem"
+            includes = [drive / path for path in ("include", "private/include", "sd/include", "sd/sdspi/include")]
+            includes.extend(filesystem / path for path in ("include", "private/include", "fat/include", "fat/FatFs"))
+            sources = [drive / path for path in ("src/physical_drive.c", "sd/sdspi/src/sdspi_physical_drive.c")]
+            sources.extend(filesystem / path for path in (
+                "src/dir.c", "src/file.c", "src/file_system.c", "fat/src/fatfs.c",
+                "fat/FatFs/ff.c", "fat/FatFs/ffsystem.c", "fat/FatFs/ffunicode.c",
+            ))
+            # Match the umbrella headers emitted by the SDK's install_headers().
+            (out / "MikroSDK.PhysicalDrive").write_text(
+                "#include <physical_drive.h>\n#include <sdspi_physical_drive.h>\n")
+            (out / "MikroSDK.FileSystem").write_text(
+                "#include <file_system.h>\n#include <ffconf.h>\n#include <ff_types.h>\n"
+                "#include <file.h>\n#include <dir.h>\n#include <fatfs.h>\n")
+            # The SDK declares its own SEEK_END in file_system.h.
+            (out / "cstdio.h").write_text("#include <stdio.h>\n#undef SEEK_END\n")
+            return includes, sources
+        return [], []
 
     def compile(self, flags, paths, out, log):
         out.mkdir(exist_ok=True)
@@ -281,7 +384,39 @@ def build_driver(target, click, out, revision, expected_buses=None):
             result["sdk_modules"] = sorted(modules)
             if expected_buses is not None and buses != sorted(expected_buses):
                 raise BuildError(f"SDK interface set {buses!r} differs from configured {expected_buses!r}")
-            flags, support = target.config(out, include, modules, imports)
+            extra_includes, extra_sources, defines = package_inputs(click, include)
+            middleware_includes, middleware = target.middleware(click.name, out)
+            if click.name == "llci2c":
+                # Upstream CMake omits this unused SPI source from the I2C target.
+                drivers = [source for source in drivers if source.name != "llcspi.c"]
+            compiled_inputs = [*headers, *drivers, *extra_sources, *middleware]
+            if example.is_file():
+                compiled_inputs.append(example)
+            effective_imports = dependencies(compiled_inputs)
+            effective_modules = {name.removeprefix("drv_") for name in effective_imports if name.startswith("drv_")}
+            contents = b"\n".join(path.read_bytes() for path in compiled_inputs)
+            uart_log = bool(re.search(rb"\blog_read\s*\(", contents)
+                            or set(LOG_OBJECT.findall(contents)) & set(UART_MEMBER.findall(contents)))
+            if uart_log:
+                effective_modules.add("uart")
+            # Some packages rely on a transitive header and the umbrella driver library.
+            if re.search(rb"\bdigital_out_\w+\s*\(", contents):
+                effective_modules.add("digital_out")
+            if click.name in {"ethwiz", "microsd"}:
+                effective_modules.update(("spi_master", "digital_out"))
+            flags, support = target.config(out, include, effective_modules, effective_imports, uart_log)
+            flags.extend(f"-I{target.path(path)}" for path in [*extra_includes, *middleware_includes])
+            flags.extend(f"-D{define}" for define in defines)
+            source_flags = list(flags)
+            if click.name in MATH_BOARDS:
+                source_flags.extend(["-include", "legacy_math.h"])
+            if click.name == "3dhall6":
+                # On ARM GCC, const already places these tables in ROM.
+                source_flags.append("-Dcode=")
+            if click.name in {"ultrasonic3", "ultrasonic4"}:
+                source_flags.extend(["-include", "invn/soniclib/ch_extra_display_utils.h"])
+            result["linked_sdk_modules"] = sorted(effective_modules)
+            result["uart_log"] = uart_log
             flatten = (target.sdk / "cmake/InstallHeadersFlatten.cmake.in").read_text()
             (out / "flatten_me.h").write_text(flatten.replace(
                 "@MACRO_LIST1@@MACRO_LIST2@", "#define FLATTEN_ME_LEVEL FLATTEN_ME_LEVEL_NONE"
@@ -290,26 +425,48 @@ def build_driver(target, click, out, revision, expected_buses=None):
             stages[stage] = "passed"
 
             stage = "driver_compile"
-            objects = target.compile(flags, drivers, out / "driver-objects", log)
+            if click.name in {"ultrasonic3", "ultrasonic4"}:
+                bsp = include.parent / "src/bsp.c"
+                port = platform_source(bsp, out, "soniclib_exti.h", [
+                    ('#include "mcu.h"\n#include "interrupts.h"', '#include "stm32f7xx.h"'),
+                    ('#ifdef STM32F4xx\nvoid EXTI3_IRQHandler',
+                     '#if defined(STM32F746xx)\n#include "soniclib_exti.h"\n'
+                     '#elif defined(STM32F4xx)\nvoid EXTI3_IRQHandler'),
+                    ('#ifdef STM32F4xx\n    if ( click_ptr->int_pin_name != PD3 )',
+                     '#if defined(STM32F4xx) || defined(STM32F746xx)\n'
+                     '    if ( click_ptr->int_pin_name != GPIO_PD3 )'),
+                ], result)
+                drivers = [port if source == bsp else source for source in drivers]
+            objects = target.compile(source_flags, [*drivers, *extra_sources], out / "driver-objects", log)
             stages[stage] = "passed"
 
             stage = "example_compile"
             if not example.is_file():
                 stages[stage] = "missing_input"
                 raise BuildError("SDK example/main.c missing")
-            positions = {position.decode() for position in POSITIONS.findall(example.read_bytes())}
-            if positions - {"1"}:
+            example_source = example.read_bytes()
+            positions = {position.decode() for position in
+                         [*POSITIONS.findall(example_source), *EXPLICIT_SOCKETS.findall(example_source)]}
+            if positions - target.socket_pins.keys():
                 stages[stage] = "mapping_missing"
-                raise BuildError("SDK example requires a socket beyond the verified socket 1 map")
-            objects.extend(target.compile(flags, [example], out / "example-objects", log))
+                raise BuildError("SDK example requires a socket outside the verified board map")
+            if positions - {"1"}:
+                result["socket_pins"] = {socket: target.socket_pins[socket] for socket in sorted(positions)}
+            if click.name == "swieeprom":
+                example = platform_source(example, out, "swieeprom_pin.h", [
+                    ('#elif __GNUC__\n    #ifdef STM32F407ZG',
+                     '#elif __GNUC__\n    #if defined(STM32F746xx)\n'
+                     '        #include "swieeprom_pin.h"\n    #elif defined(STM32F407ZG)'),
+                ], result)
+            objects.extend(target.compile(source_flags, [example], out / "example-objects", log))
             stages[stage] = "passed"
 
             stage = "link"
-            unsupported = modules - PERIPHERALS.keys() - GPIO
+            unsupported = effective_modules - PERIPHERALS.keys() - GPIO
             if unsupported:
                 stages[stage] = "unsupported_sdk_module"
                 raise BuildError(f"STM32F746 adapter needs SDK support for {', '.join(sorted(unsupported))}")
-            linked = target.link(flags, objects, support, out, log)
+            linked = target.link(flags, objects, [*support, *middleware], out, log)
             stages[stage] = "passed"
 
             stage = "artifacts"
@@ -347,6 +504,18 @@ def corpus_selection(corpus, cases, all_boards, cohort):
     return root, sorted(names)
 
 
+def compatibility_outcome(report, out, expected):
+    if report["stages"]["artifacts"] == "passed":
+        return "unexpected_pass" if expected else "fixed"
+    if expected and report["stages"][expected["stage"]] == "failed":
+        diagnostics = (out / report["build_log"]).read_text(errors="replace").splitlines()
+        first_error = next((line.partition("error:")[2].strip()
+                            for line in diagnostics if "error:" in line), "")
+        if first_error == expected["diagnostic"]:
+            return "known_blocker"
+    return "regression"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=CACHED_SOURCES / "mikrosdk-click-v2")
@@ -362,18 +531,24 @@ def main():
     select.add_argument("--case", action="append", help="One or more SDK driver IDs")
     select.add_argument("--all", action="store_true", help="Process the complete SDK inventory")
     select.add_argument("--pilot", action="store_true", help="Run the pinned 64-driver build sample")
+    select.add_argument("--compatibility", action="store_true", help="Run the pinned pre-simulation regression fixture")
+    parser.add_argument("--jobs", type=int, default=1)
     parser.add_argument("--shard", type=int, default=0)
     parser.add_argument("--shards", type=int, default=1)
     args = parser.parse_args()
     if not 0 <= args.shard < args.shards:
         parser.error("--shard must index one of --shards")
+    if args.jobs < 1:
+        parser.error("--jobs must be positive")
     try:
         cohort = json.loads(COHORT.read_text())
-        pilot = json.loads(PILOT.read_text()) if args.pilot else None
-        cases = list(pilot["drivers"]) if pilot else args.case
+        selection = PILOT if args.pilot else COMPATIBILITY if args.compatibility else None
+        fixture = json.loads(selection.read_text()) if selection else None
+        cases = list(fixture["drivers"]) if fixture else args.case
         root, names = corpus_selection(args.corpus, cases, args.all, cohort)
-        if pilot and git_revision(root) != pilot["sdk_revision"]:
-            raise BuildError("the 64-driver sample requires the SDK revision in its selection manifest")
+        revision = git_revision(root)
+        if fixture and revision != fixture["sdk_revision"]:
+            raise BuildError(f"{selection.name} requires the SDK revision in its selection manifest")
         if not names:
             raise BuildError("SDK selection contains no drivers")
         target = Target(args)
@@ -381,17 +556,37 @@ def main():
         parser.exit(1, f"{error}\n")
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
-    revision = git_revision(root)
     results = {}
-    for name in names[args.shard::args.shards]:
-        report = build_driver(target, root / name, out / name, revision, cohort.get(name))
-        results[name] = report
-        print(f"{name}: {report['stages']} {report.get('detail', '')}", flush=True)
+    compatibility = {}
+
+    def build_one(name):
+        return build_driver(target, root / name, out / name, revision, cohort.get(name))
+
+    with ThreadPoolExecutor(max_workers=args.jobs) as workers:
+        for report in workers.map(build_one, names[args.shard::args.shards]):
+            name = report["driver"]
+            results[name] = report
+            if args.compatibility:
+                expected = fixture["blocked"].get(name)
+                outcome = compatibility_outcome(report, out / name, expected)
+                compatibility[name] = {"outcome": outcome, "previous_stage": fixture["drivers"][name]}
+                if expected:
+                    compatibility[name]["expected_blocker"] = expected
+                print(f"{name}: {outcome}", flush=True)
+            else:
+                print(f"{name}: {report['stages']} {report.get('detail', '')}", flush=True)
     index = "build-index.json" if args.shards == 1 else f"build-index-{args.shard}.json"
-    write_json(out / index, {
+    build_index = {
         "schema_version": 1, "sdk_revision": revision, "shard": args.shard, "shards": args.shards,
         "drivers": results,
-    })
+    }
+    if args.compatibility:
+        counts = Counter(item["outcome"] for item in compatibility.values())
+        build_index["compatibility"] = {"counts": dict(counts), "drivers": compatibility}
+        print(json.dumps(dict(counts), sort_keys=True))
+    write_json(out / index, build_index)
+    if args.compatibility:
+        return int(bool(counts["regression"] or counts["unexpected_pass"]))
     return int(any(report["stages"]["artifacts"] != "passed" for report in results.values()))
 
 

@@ -87,6 +87,9 @@ def verify(case, compiler, report, cli, renode, build_index):
         uart = log.with_suffix(".uart")
         registers = log.with_suffix(".registers")
         script = log.with_suffix(".resc")
+        uart_ports = {"usart6": (uart, run["uart"])}
+        for port, expected in run.get("additional_uart", {}).items():
+            uart_ports[port] = (log.with_suffix(f".{port}.uart"), expected)
         commands = []
         if model := run.get("model"):
             commands.append(f"include {monitor_path(ROOT / model)}")
@@ -95,7 +98,8 @@ def verify(case, compiler, report, cli, renode, build_index):
             f'machine LoadPlatformDescription {monitor_path(ROOT / run["platform"])}',
             f"sysbus LoadELF {monitor_path(elf)}",
             "cpu VectorTableOffset 0x08000000",
-            f"sysbus.usart6 CreateFileBackend {monitor_path(uart)} true",
+            *(f"sysbus.{port} CreateFileBackend {monitor_path(path)} true"
+              for port, (path, _) in uart_ports.items()),
             *renode_commands(run["commands"], registers),
             'mach rem "uni-clicker"',
         ])
@@ -112,9 +116,10 @@ def verify(case, compiler, report, cli, renode, build_index):
             words = [int(line) for line in registers.read_text().splitlines()] if registers.exists() else []
             if words != run["register_words"]:
                 raise SystemExit(f"{case.stem}/{run['name']} register mismatch: {words!r}. See {log}")
-        observed = [line.strip() for line in uart.read_text().splitlines()] if uart.exists() else []
-        if observed != run["uart"]:
-            raise SystemExit(f"{case.stem}/{run['name']} UART mismatch: {observed!r}. See {log}")
+        for port, (path, expected) in uart_ports.items():
+            observed = [line.strip() for line in path.read_text().splitlines()] if path.exists() else []
+            if observed != expected:
+                raise SystemExit(f"{case.stem}/{run['name']} {port} mismatch: {observed!r}. See {log}")
         print(f"{case.stem}/{run['name']} passed ({compiler})", flush=True)
 
 

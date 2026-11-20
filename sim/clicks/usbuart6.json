@@ -1,0 +1,22 @@
+{
+  "driver": "usbuart6",
+  "runs": [
+    {
+      "name": "serial-bridge",
+      "platform": "sim/clicks/usbuart6.repl",
+      "commands": [
+        "emulation RunFor \"0.25\"",
+        "sysbus.usart6 WriteChar 95",
+        "emulation RunFor \"0.01\"",
+        "sysbus.usart6 WriteChar 65",
+        "emulation RunFor \"0.01\"",
+        "sysbus.usart1 WriteChar 66",
+        "emulation RunFor \"0.01\""
+      ],
+      "uart": ["Application Init", "Application Task", "B"],
+      "additional_uart": {
+        "usart1": ["A"]
+      }
+    }
+  ]
+}

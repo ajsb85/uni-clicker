@@ -4,5 +4,6 @@
   "buzz": ["pwm"],
   "gps": ["uart"],
   "gyro7": ["spi"],
-  "thermo28": ["i2c"]
+  "thermo28": ["i2c"],
+  "usbuart6": ["uart"]
 }

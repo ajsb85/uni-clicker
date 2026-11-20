@@ -30,6 +30,45 @@ jobs:
           name: click-inventory
           path: click-inventory.json
 
+  compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install Arm GNU and prepare the pinned SDKs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi libnewlib-arm-none-eabi
+          make deps-stm32cube
+          tools/prepare-necto-clicks.sh --compatibility
+      - name: Rebuild the 81 pre-simulation failures
+        run: |
+          tools/build-click-sdk.py --compatibility --jobs "$(nproc)" --out build/click-compatibility
+      - name: Verify pristine vendor inputs
+        if: always()
+        run: |
+          for sdk in mikrosdk-click-v2 mikrosdk-v2; do
+            status=$(git -C ".cache/vendor/$sdk" status --porcelain --untracked-files=all)
+            if [[ -n "$status" ]]; then
+              printf '%s\n%s\n' "$sdk changed during the build" "$status" >&2
+              exit 1
+            fi
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: click-build-compatibility
+          path: |
+            build/click-compatibility/build-index.json
+            build/click-compatibility/*/build.json
+            build/click-compatibility/*/build.log
+            build/click-compatibility/*/example.elf
+            build/click-compatibility/*/example.hex
+            build/click-compatibility/*/main.c
+            build/click-compatibility/*/bsp.c
+
   simulate:
     needs: catalog
     runs-on: ubuntu-24.04

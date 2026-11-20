@@ -60,8 +60,8 @@ The test uses an ideal voltage source and a fixed conversion time.
 `tools/build-click-sdk.py` compiles the original SDK driver sources and
 `example/main.c` separately, then links them with the UNI Clicker board
 adapter and STM32F746ZG startup. Its USB log adapter routes the vendor example
-messages to USART6. The first cohort covers Thermo 28 (I²C), Gyro 7 (SPI),
-GPS (USART1), Ambient (ADC), Buzz (PWM), and Accel 21 (I²C plus SPI). It uses
+messages to USART6. The cohort covers Thermo 28 (I²C), Gyro 7 (SPI),
+GPS and USB UART 6 (USART1), Ambient (ADC), Buzz (PWM), and Accel 21 (I²C plus SPI). It uses
 the MikroBUS socket 1 pin map. ADC, PWM and UART use PA3, PD12, and PB7/PB6,
 respectively, on this SiBRAIN card. [Cohort](../examples/necto-click/cohort.json) · [Pin map](../examples/necto-click/board.h)
 
@@ -108,6 +108,42 @@ library, the STM32 OneWire build integration, and math library linkage.
 All 64 then compiled and linked with Linux Arm GNU. Electronics and protocol behavior for the additional boards can be checked
 in Renode or on the bench as profiles become available.
 
+### Rebuild the 81 pre-simulation failures
+
+```bash
+make deps-stm32cube
+tools/prepare-necto-clicks.sh --compatibility
+tools/build-click-sdk.py --compatibility --jobs 4 --out build/click-compatibility
+```
+
+The [compatibility fixture](../examples/necto-click/compatibility.json) records
+all 81 examples that failed in the original audit at Click SDK revision
+`c261a018`. The UNI Clicker adapter supplies legacy delay and math helpers,
+routes logger reads and `logger.uart` through the SDK's real USART6 driver,
+and links dependencies declared by the original packages. These include
+W5500, FatFs and the SD-SPI middleware, Semtech LR1110, ST RFAL, and SonicLib.
+TDC uses the SiBRAIN's socket 2 map for its second device.
+
+The upstream Click and core SDK checkouts stay pristine. The build directory
+contains local F746 source copies for the SWI EEPROM's PD12 data pin and
+SonicLib's PD3/EXTI3 interrupt. Their build records retain the original and
+adapted source hashes. The GitHub job checks vendor tree cleanliness and
+uploads the ELF and HEX images, build index, source copies, and compiler logs
+as `click-build-compatibility`.
+
+The fixture links 74 of the 81 examples. Six RGB examples need a verified
+STM32F746ZG pulse-timing port. Air Quality 13 requires the separately
+licensed Bosch BMV080 SDK for Cortex-M7F. Each known blocker must reproduce at
+the recorded stage and match its compiler diagnostic. An unexpected build
+failure or an unexpected success fails the fixture and leaves the logs for
+review.
+
+The USB UART 6 Renode case boots the upstream example and sends distinct
+bytes through both directions of its USART6-to-MikroBUS USART1 bridge. It
+checks both simulated UART outputs. The build evidence covers the other
+examples through linking and image export. Each external Click protocol
+needs its own runtime model and assertions.
+
 ### Join the build and simulation evidence
 
 Generate `corpus.json` with `clickforge renode-corpus`. Run
@@ -137,6 +173,6 @@ tools/check-necto-clicks.py inventory
 tools/check-necto-clicks.py verify
 ```
 
-The preparation step fetches pinned shallow, sparse MikroE source trees. For the NECTO compiler on the WSL bench, use the installed SDK selected by `tools/bench-env.sh` and `tools/prepare-necto-clicks.sh --drivers-only`. The GitHub Actions workflow inventories the full pinned corpus, builds the six-driver cohort, and runs the registered simulation cases. It uploads compiler logs, ELF and HEX files, build metadata, generated scripts, UART output, and case results. The pinned corpus contains 2,018 upstream example directories. Thermo 28, Ambient, and the standalone LAN8651 probe have registered simulation cases. [Workflow](../.github/workflows/clicks.yml)
+The preparation step fetches pinned shallow, sparse MikroE source trees. For the NECTO compiler on the WSL bench, use the installed SDK selected by `tools/bench-env.sh` and `tools/prepare-necto-clicks.sh --drivers-only`. The GitHub Actions workflow inventories the 2,018 upstream examples, builds the compatibility fixture and seven-driver cohort, and runs the registered Thermo 28, Ambient, USB UART 6, and standalone LAN8651 cases. It uploads compiler logs, ELF and HEX files, build metadata, generated scripts, UART output, and case results. [Workflow](../.github/workflows/clicks.yml)
 
 The Windows resource inventory points to the sibling `clickforge` and `boardforge` checkouts under `C:\Users\gbast\winui\firechip-forge`. Clickforge's driver IDs and model metadata can seed the inventory. Each Renode case still needs a verified socket map, a firmware build, an external model, and expected behavior. See the [Renode handoff](renode.md) for the local tools and source references.
