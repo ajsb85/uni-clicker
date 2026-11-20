@@ -60,4 +60,27 @@ The organization inventory on 2026-11-20 had 38 public repositories. All were cl
 
 The standalone `cargo-flash`, `cargo-embed`, `target-gen`, and `probe-rs-rtt` repositories are archived. Use the commands shipped with the verified probe-rs release for this bench.
 
+## Tonbandgeraet timing traces
+
+The depth-one checkout at `$UNI_WINDOWS_ROOT/Tonbandgeraet` is at `73aa9e440e2c0d920f990932e282e329069f40b0`. Its C recorder supports a bounded SRAM snapshot and a streaming backend. The Rust converter reads the binary event format and emits JSON Lines or a Perfetto trace. Keep the firmware recorder and converter on the same revision because the upstream format can change. [Tonbandgeraet source](https://github.com/schilkp/Tonbandgeraet/tree/73aa9e440e2c0d920f990932e282e329069f40b0)
+
+The working copy is staged on ext4 under the directory recorded in `.cache/tonbandgeraet-stage`. Its `src/FreeRTOS-Kernel` symlink uses the NECTO FreeRTOS 11.3.0 tree. All 77 upstream unit tests passed. The upstream bare-metal integration, POSIX FreeRTOS integration, and QEMU MPS2-AN385 Cortex-M3 FreeRTOS integration also passed. QEMU produced 3,617 FreeRTOS events and 23 FreeRTOS metadata records, including task and queue names. The stage contains `unit.log`, the three integration logs, and `freertos-{posix,qemu}.perfetto-trace`.
+
+The UNI Clicker experiment copied the STM32Cube application into the stage's `uni-renode/` directory and added `tband_config.h` and `tband_port.h`. It timestamps events using the existing 1 ms SysTick, saves and restores PRIMASK in trace critical sections, and uses 256 bytes of metadata space and 512 bytes of snapshot space. At the end of the run, the sample copies the metadata followed by the events to `uni_trace_capture`. Its first 32-bit word holds the number of captured bytes. Renode's `dump_file` command reads the structure from SRAM using the address in the ELF. The staged `main.c` and `run.resc` show the complete experiment.
+
+The Renode run recovered 141 trace bytes and retained both exact USART6 greetings. JSON assertions found two 501 ms delays and heartbeat values 1 and 2 at 501 ms and 1,002 ms, with clear CFSR and HFSR. The 1 ms clock captured heartbeat timing. The USART6 transmission markers fell in the same tick in the emulation. The experimental ELF used 5,764 bytes of text and 1,736 bytes of BSS, including the snapshot and export buffers. The F746ZG experiment was simulated.
+
+```bash
+stage=$(cat .cache/tonbandgeraet-stage)
+CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 \
+  cargo build --locked --manifest-path "$stage/src/tools/Cargo.toml" \
+  --target-dir "$stage/target" -p tband-cli --no-default-features
+cli="$stage/target/debug/tband-cli"
+trace="$stage/uni-renode/trace.bin"
+"$cli" --Werror dump --mode bare-metal "$trace" > "$stage/uni-renode/events.jsonl"
+"$cli" --Werror conv --mode bare-metal --output "$stage/uni-renode/uni.perfetto-trace" "$trace"
+```
+
+Use JSON assertions for interval lengths, marker order, and missing events in automation. Keep the Perfetto artifact for queue, task, or interrupt timeline inspection. A bounded snapshot lets the firmware finish recording before the debugger reads it, which keeps the UART available for the existing smoke test. The FreeRTOS integration examples provide the scheduler and resource hooks for a later F746ZG RTOS port.
+
 The Renode model instantiates a Cortex-M7, flash, SRAM, NVIC, RCC, GPIO and USART6. It can validate the exact greeting bytes without hardware. USB, oscillator tolerances, the programming mux, signal quality and external serial wiring require physical observations. [Renode STM32F746 model](https://github.com/renode/renode/blob/master/platforms/cpus/stm32f746.repl)

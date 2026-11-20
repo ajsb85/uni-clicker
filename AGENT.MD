@@ -48,6 +48,7 @@ Paths in the right column are relative to `$UNI_WINDOWS_ROOT` unless prefixed wi
 | Rust references | `stm32-rs/stm32f7xx-hal/` and adjacent PAC/HAL repositories; local target `thumbv7em-none-eabihf` |
 | Native Rust programmer and debugger | `.uni-clicker-lab-cache/probe-rs/v0.32.0/` contains `probe-rs.exe`, `cargo-flash.exe`, and `cargo-embed.exe`. WSL provides `rust-gdb` through rustup and `gdb-multiarch` |
 | probe-rs organization sources | `probe-rs/` has all 38 public repositories. The WSL inventory and checkout revisions are in `.cache/probe-rs-org/{repositories,revisions}.tsv` |
+| Tonbandgeraet timing traces | `Tonbandgeraet/` at `73aa9e44`; `.cache/tonbandgeraet-stage` points to the staged headless converter, FreeRTOS captures, and STM32F746ZG Renode experiment |
 | Swift examples and installed compiler | `swift-embedded-examples/stm32-{blink,uart-echo}/`, `.uni-clicker-lab-cache/swift/usr/bin/swiftc` |
 | Zig and MicroZig | `zig` on WSL PATH, version 0.17.1; `microzig/` commit `f629434`; `port/stmicro/stm32/src/Chips.zig` has the F746ZG target |
 | Vendor classic ARM compiler | `mikroC PRO for ARM/mikroCARM.exe`, `Defs/STM32F746ZG.c`, `Uses/`, `Examples/ST/`, `mikroc_PRO_ARM.chm` in that install |
@@ -117,6 +118,8 @@ x/wx 0x4001141c
 At a fault, decode SHCSR, CFSR, HFSR, MMFAR and BFAR with RM0385 and PM0253. Save the fault status and exception stack frame before triggering another reset. Use `nm` addresses when GDB starts in a different language context. Use hardware breakpoints in flash and location watchpoints for state words. After `monitor reset halt`, flush the client register cache so GDB reads the new state.
 
 For a source-level regression, keep a known-good ELF and binary, reduce the difference to one clock or peripheral, and compare equivalent instructions, register values and virtual time in Renode before repeating SWD tests. Include the ELF hash, exact compiler and SDK revision, simulator model, probe backend, flash report, and first failing observation in the notes. Use [the verified Renode recipes](docs/renode.md) for exact output, GPIO timing, instruction traces, and GDB.
+
+Use Tonbandgeraet when a check needs timestamps, event durations, or FreeRTOS scheduling evidence. Capture a bounded snapshot, run `tband-cli --Werror dump` for JSON Lines assertions, and run `tband-cli conv` for a Perfetto timeline. The F746ZG Renode experiment recovered the snapshot from SRAM and kept the USART6 greeting check. [Trace experiment and commands](docs/research.md#tonbandgeraet-timing-traces)
 
 ## Arduino CLI upload and debugger
 
