@@ -1,6 +1,7 @@
 {
   "accel21": ["i2c", "spi"],
   "ambient": ["adc"],
+  "boost8": [],
   "buzz": ["pwm"],
   "gps": ["uart"],
   "gyro7": ["spi"],

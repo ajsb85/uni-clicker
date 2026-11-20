@@ -1,0 +1,42 @@
+{
+  "driver": "boost8",
+  "runs": [
+    {
+      "name": "output-enables",
+      "platform": "sim/clicks/boost8.repl",
+      "commands": [
+        "emulation RunFor \"0.1\"",
+        {"read_u32": "0x40021014"},
+        {"read_u32": "0x40020c14"},
+        "sysbus.usart6 WriteChar 49",
+        "emulation RunFor \"0.01\"",
+        {"read_u32": "0x40021014"},
+        {"read_u32": "0x40020c14"},
+        "sysbus.usart6 WriteChar 51",
+        "emulation RunFor \"0.01\"",
+        {"read_u32": "0x40021014"},
+        {"read_u32": "0x40020c14"},
+        "sysbus.usart6 WriteChar 54",
+        "emulation RunFor \"0.01\"",
+        {"read_u32": "0x40021014"},
+        {"read_u32": "0x40020c14"}
+      ],
+      "register_words": [0, 0, 2048, 0, 2048, 4096, 0, 0],
+      "uart": [
+        "Application Init",
+        "Application Task",
+        "> List of valid commands:",
+        "1 - Turn on positive output",
+        "2 - Turn off positive output",
+        "3 - Turn on negative output",
+        "4 - Turn off negative output",
+        "5 - Turn on both outputs",
+        "6 - Turn off both outputs",
+        "Enter command from provided list:",
+        "Turning on positive output",
+        "Turning on negative output",
+        "Turning off both outputs"
+      ]
+    }
+  ]
+}
