@@ -27,7 +27,7 @@ source tools/bench-env.sh
 df -h . .cache/sdk-native
 ```
 
-The RIOT vendor path and MicroPython build path on this bench link into the mounted cache. The saved Cargo and Zig intermediates are under `frameworks/archived-rust-build` and `frameworks/archived-wsl-builds` in the Windows-backed cache. The Rust and Zig firmware images remain under `build/`.
+The STM32CubeF7 and RIOT vendor paths and the MicroPython build path on this bench link into the mounted cache. The STM32CubeF7 checkout moved to `.cache/sdk-native/work/vendor/STM32CubeF7` when WSL root filled again. Builds still resolve it through `.cache/vendor/STM32CubeF7`. The saved Cargo and Zig intermediates are under `frameworks/archived-rust-build` and `frameworks/archived-wsl-builds` in the Windows-backed cache. The Rust and Zig firmware images remain under `build/`.
 
 ## Locate resources
 
@@ -119,7 +119,7 @@ At a fault, decode SHCSR, CFSR, HFSR, MMFAR and BFAR with RM0385 and PM0253. Sav
 
 For a source-level regression, keep a known-good ELF and binary, reduce the difference to one clock or peripheral, and compare equivalent instructions, register values and virtual time in Renode before repeating SWD tests. Include the ELF hash, exact compiler and SDK revision, simulator model, probe backend, flash report, and first failing observation in the notes. Use [the verified Renode recipes](docs/renode.md) for exact output, GPIO timing, instruction traces, and GDB.
 
-Use Tonbandgeraet when a check needs timestamps, event durations, or FreeRTOS scheduling evidence. Capture a bounded snapshot, run `tband-cli --Werror dump` for JSON Lines assertions, and run `tband-cli conv` for a Perfetto timeline. The F746ZG Renode experiment recovered the snapshot from SRAM and kept the USART6 greeting check. [Trace experiment and commands](docs/research.md#tonbandgeraet-timing-traces)
+Use `"$cli" check stm32cube --trace` for HAL heartbeat timing and `"$cli" check freertos --trace` for scheduler and queue timing. Both compile a trace variant, recover its bounded snapshot from Renode SRAM, and leave the raw capture, asserted JSON Lines, and `uni.perfetto-trace` in the report's `trace/` directory. Set `TONBAND_ROOT` to use another recorder revision. Set `TBAND_CLI` to provide a matching prebuilt converter. The default is the workspace Tonbandgeraet checkout and its staged converter. [Trace setup and theory](docs/research.md#tonbandgeraet-timing-traces)
 
 ## Arduino CLI upload and debugger
 
@@ -154,6 +154,10 @@ elf=$(wslpath -w "$PWD/build/rust/hello.elf")
 Use another WSL terminal to run `RUST_GDB=gdb-multiarch rust-gdb -nx build/rust/hello.elf`. In GDB, run `target remote 127.0.0.1:1337`, set a hardware breakpoint at `main`, and use `stepi`. Stop the GDB server before opening a new probe session. To read CFSR and HFSR, use `"$PROBE_RS" read "${connection[@]}" -f simple-hex b32 0xe000ed28 2`. Direct `probe-rs read` works for those addresses. The probe-rs 0.32.0 GDB stub returned a memory access error for them. Use OpenOCD with `uni-cli verify rust` for the full GPIO/UART and fault-register checks. [Bench evidence](docs/verification.md#arduino-and-native-rust-programming)
 
 Add `--preverify` to the download for repeat runs of the same ELF. The unchanged-image pass took 0.25 seconds. `probe-rs mi meta` emits JSON version and build metadata. On this F746ZG, `mi info` ignored the explicit chip and auto-identification failed. The verified probe commands pass `--chip STM32F746ZG` explicitly. [Organization source review](docs/research.md#probe-rs-source-checkouts)
+
+Run `"$cli" check rust --hardware --programmer probe-rs` to use native probe-rs for programming and the OpenOCD debugger for the complete GPIO/UART check. This acquires the bench probe lock, checks the STM32 device ID and flash capacity, uses preverification and readback, then resets. The programmer, server and debugger logs are under the report's `hardware/` directory.
+
+Use `"$cli" test rust --hardware` for board regression tests with RTT output. The dedicated test ELF covers PD7 output, SysTick interrupts, USART6 routing and transmit completion, clear fault status, and expected panic reporting. The runner builds with WSL Cargo, uses Windows probe-rs for flash and semihosting, and records the test output under `.cache/verification/rust-board.*`. Run `"$cli" check rust --hardware --programmer probe-rs` to return to the greeting image after a test session.
 
 ## Work on a new peripheral
 

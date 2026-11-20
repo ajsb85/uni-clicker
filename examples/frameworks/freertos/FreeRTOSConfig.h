@@ -5,7 +5,13 @@
 #define configTICK_RATE_HZ                  1000U
 #define configUSE_PREEMPTION                1
 #define configUSE_IDLE_HOOK                 0
+#ifdef UNI_TBAND_TRACE
+#define configUSE_TICK_HOOK                 1
+#define configUSE_TRACE_FACILITY            1
+#define INCLUDE_xTaskGetIdleTaskHandle      1
+#else
 #define configUSE_TICK_HOOK                 0
+#endif
 #define configMAX_PRIORITIES                4
 #define configMINIMAL_STACK_SIZE            128U
 #define configMAX_TASK_NAME_LEN             12
@@ -23,5 +29,9 @@
 #define vPortSVCHandler SVC_Handler
 #define xPortPendSVHandler PendSV_Handler
 #define xPortSysTickHandler SysTick_Handler
+
+#ifdef UNI_TBAND_TRACE
+#include "tband.h"
+#endif
 
 #endif

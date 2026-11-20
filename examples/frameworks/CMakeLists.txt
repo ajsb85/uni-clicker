@@ -4,6 +4,7 @@ project(uni_clicker_rtos LANGUAGES C ASM)
 set(FRAMEWORK "" CACHE STRING "freertos or threadx")
 set(KERNEL_DIR "" CACHE PATH "Upstream kernel source directory")
 set(STM32CUBE_F7 "" CACHE PATH "STM32CubeF7 root")
+set(TONBAND_ROOT "" CACHE PATH "Tonbandgeraet sources for the FreeRTOS trace build")
 set(cmsis "${STM32CUBE_F7}/Drivers/CMSIS")
 set(device "${cmsis}/Device/ST/STM32F7xx")
 set(shared "${CMAKE_CURRENT_SOURCE_DIR}/../../firmware")
@@ -27,6 +28,14 @@ if(FRAMEWORK STREQUAL "freertos")
     target_sources(hello PRIVATE freertos/main.c "${KERNEL_DIR}/tasks.c"
         "${KERNEL_DIR}/list.c" "${KERNEL_DIR}/queue.c" "${port}/port.c")
     target_include_directories(hello PRIVATE freertos "${KERNEL_DIR}/include" "${port}")
+    if(TONBAND_ROOT)
+        target_compile_definitions(hello PRIVATE UNI_TBAND_TRACE UNI_TBAND_FREERTOS)
+        target_include_directories(hello PRIVATE ../trace "${TONBAND_ROOT}/tband/inc")
+        target_sources(hello PRIVATE ../trace/uni_trace.c
+            "${TONBAND_ROOT}/tband/src/tband.c"
+            "${TONBAND_ROOT}/tband/src/tband_backend.c"
+            "${TONBAND_ROOT}/tband/src/tband_freertos.c")
+    endif()
 elseif(FRAMEWORK STREQUAL "threadx")
     set(port "${KERNEL_DIR}/ports/cortex_m7/gnu")
     file(GLOB kernel CONFIGURE_DEPENDS "${KERNEL_DIR}/common/src/*.c" "${port}/src/*.S")

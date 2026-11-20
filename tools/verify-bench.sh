@@ -47,7 +47,10 @@ trap 'exit 143' TERM
 
 for image; do
     "$cli" analyze "$image" >"$run/$image-elf.txt"
-    "$cli" flash "$image" >"$run/$image-flash.txt"
+    if ! "$cli" flash "$image" --programmer "${UNI_VERIFY_PROGRAMMER:-cubeprogrammer}" >"$run/$image-flash.txt" 2>&1; then
+        printf 'Flash failed. See %s\n' "$run/$image-flash.txt" >&2
+        exit 1
+    fi
     debug/start-openocd.sh >"$run/$image-openocd.txt" 2>&1 &
     server=$!
     ready=false

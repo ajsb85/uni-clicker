@@ -5,9 +5,34 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use crate::{Firmware, Result, run};
+use crate::{Firmware, Programmer, Result, run};
 
-pub fn run_check(firmware: Firmware, hardware: bool) -> Result<()> {
+pub(super) fn run_check(firmware: Firmware, flags: &[String]) -> Result<()> {
+    let mut hardware = false;
+    let mut trace = false;
+    let mut programmer = None;
+    let mut arguments = flags.iter();
+    while let Some(flag) = arguments.next() {
+        match flag.as_str() {
+            "--hardware" if !hardware => hardware = true,
+            "--trace" if !trace => trace = true,
+            "--programmer" if programmer.is_none() => {
+                programmer = Some(Programmer::parse(
+                    arguments.next().ok_or("--programmer requires a value")?,
+                )?);
+            }
+            _ => return Err(format!("unexpected check option {flag:?}").into()),
+        }
+    }
+    if programmer.is_some() && !hardware {
+        return Err("--programmer requires --hardware".into());
+    }
+    let programmer = programmer.unwrap_or(Programmer::Cube);
+    programmer.validate(firmware)?;
+    if trace && !matches!(firmware, Firmware::Stm32Cube | Firmware::FreeRtos) {
+        return Err("--trace supports stm32cube and freertos".into());
+    }
+
     let name = firmware.name();
     let cli = env::current_exe()?;
     let reports = env::current_dir()?.join(".cache/verification");
@@ -54,7 +79,11 @@ pub fn run_check(firmware: Firmware, hardware: bool) -> Result<()> {
 
     let started = Instant::now();
     let mut failed_stage = None;
-    for stage in ["build", "analyze", "simulate", "hardware"] {
+    let stages = ["build", "analyze", "simulate"]
+        .into_iter()
+        .chain(trace.then_some("trace"))
+        .chain(["hardware"]);
+    for stage in stages {
         if failed_stage.is_some() || (stage == "hardware" && !hardware) {
             writeln!(report, "{stage}\tskipped\t0\t-")?;
             continue;
@@ -64,7 +93,12 @@ pub fn run_check(firmware: Firmware, hardware: bool) -> Result<()> {
             command
                 .arg(name)
                 .env("UNI_VERIFY_CLI", &cli)
+                .env("UNI_VERIFY_PROGRAMMER", programmer.name())
                 .env("UNI_VERIFY_LOG_DIR", directory.join("hardware"));
+            command
+        } else if stage == "trace" {
+            let mut command = Command::new("tools/check-tonbandgeraet.sh");
+            command.arg(name).arg(directory.join("trace"));
             command
         } else {
             let mut command = Command::new(&cli);

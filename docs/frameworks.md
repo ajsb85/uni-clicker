@@ -51,9 +51,11 @@ Use matching NuttX and NuttX Apps `12.11.0` in a dedicated writable workspace. `
 
 ```bash
 source tools/bench-env.sh
-make nuttx
-tools/simulate.sh nuttx
+make cli
+build/cli/debug/uni-cli check nuttx --hardware
 ```
+
+The debugger checks the reset vectors, steps at `unihello_main`, and reads the greeting passed to `puts`. Omitting `--hardware` runs the build, analysis and exact Renode UART check.
 
 ## RIOT
 
@@ -73,9 +75,11 @@ tools/simulate.sh nuttx
 
 ```bash
 source tools/bench-env.sh
-make micropython
-tools/simulate.sh micropython
+make cli
+build/cli/debug/uni-cli check micropython --hardware
 ```
+
+The CLI validates Intel HEX checksums, flash bounds, and the reset target before programming. The debugger steps into the frozen module and reads the complete CRLF greeting at the native UART transmission call.
 
 ## .NET nanoFramework
 

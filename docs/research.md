@@ -81,6 +81,8 @@ trace="$stage/uni-renode/trace.bin"
 "$cli" --Werror conv --mode bare-metal --output "$stage/uni-renode/uni.perfetto-trace" "$trace"
 ```
 
-Use JSON assertions for interval lengths, marker order, and missing events in automation. Keep the Perfetto artifact for queue, task, or interrupt timeline inspection. A bounded snapshot lets the firmware finish recording before the debugger reads it, which keeps the UART available for the existing smoke test. The FreeRTOS integration examples provide the scheduler and resource hooks for a later F746ZG RTOS port.
+Use JSON assertions for interval lengths, marker order, and missing events in automation. Keep the Perfetto artifact for queue, task, or interrupt timeline inspection. A bounded snapshot lets the firmware finish recording before the debugger reads it, which keeps the UART available for the existing smoke test.
+
+The repeatable F746ZG checks are now `uni-cli check stm32cube --trace` and `uni-cli check freertos --trace`. The FreeRTOS variant has a producer and a higher-priority receiver. It asserts two queue transactions 500 ms apart, matching heartbeat values, and task switches for both tasks. See `trace/events.jsonl` and `trace/uni.perfetto-trace` in each check report.
 
 The Renode model instantiates a Cortex-M7, flash, SRAM, NVIC, RCC, GPIO and USART6. It can validate the exact greeting bytes without hardware. USB, oscillator tolerances, the programming mux, signal quality and external serial wiring require physical observations. [Renode STM32F746 model](https://github.com/renode/renode/blob/master/platforms/cpus/stm32f746.repl)

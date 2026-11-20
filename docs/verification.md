@@ -120,3 +120,13 @@ Windows probe-rs 0.32.0 found the ST-LINK at `0483:3748` and programmed the Rust
 An unchanged-image `probe-rs download --preverify --verify` took 0.25 seconds. `mi meta` returned parseable JSON, and `mi info` was unable to auto-identify the F746ZG. Both `uni-cli check arduino` and `uni-cli check rust` passed the build, ELF analysis and Renode stages.
 
 WSL `rust-gdb` with `gdb-multiarch` connected to the Windows probe-rs GDB server on port 1337. It read reset vector `0x08000401` and initial MSP `0x20050000`, stopped at the Rust entry on `src/main.rs:78`, and advanced the PC from `0x080005a0` to `0x080005a2`. Direct `probe-rs read` returned zero CFSR and HFSR. The GDB stub returned a memory access error at that address. OpenOCD and `rust-gdb` passed the full bench check with PD7 high, low, high and USART6 TX counters of 31, 31, and 62. Logs are under `.cache/verification/probe-rs-windows.wotpfL`. The board was left running the Rust image.
+
+## Unified hardware and timing checks
+
+`uni-cli check rust --hardware --programmer probe-rs` passed native preverification and readback, reset, and OpenOCD GPIO/UART verification. The native programmer read MCU ID `0x449` and 1,024 KiB before allowing flash. The separate `uni-cli test rust --hardware` suite passed all five embedded-test cases while carrying RTT messages over ST-LINK. The suite verified PD7 high and low, three SysTick IRQs, USART6 transmission, clear fault registers, and an expected panic. The test log is in `.cache/verification/rust-board.dweheu/`.
+
+`uni-cli check nuttx --hardware` and `uni-cli check micropython --hardware` passed build, analysis, Renode and SWD. NuttX hit `unihello_main` and confirmed the string passed to `puts`. MicroPython flashed the split Intel HEX and confirmed that the frozen module passed its 38-byte CRLF greeting to `uart_tx_data`. The CLI unit tests exercised split-image reconstruction and corruption rejection.
+
+The STM32Cube and FreeRTOS `--trace` checks passed in Renode. Native probe-rs also flashed both trace ELFs and recovered their SRAM snapshots from the physical board. The physical captures passed the same timing assertions with clear CFSR and HFSR. STM32Cube recorded two 501 ms waits. FreeRTOS recorded its sender and receiver task switches and two queue deliveries 500 ms apart. Both physical Perfetto traces are under `.cache/verification/tband-hardware.VIxVrw/`. After capture, the normal Rust greeting was flashed and verified again.
+
+Windows continued to enumerate ST-LINK and the mikroC dongle. The CODEGRIP USB scan completed with an empty device list. [Probe checks](mikroe.md#headless-probe-checks)

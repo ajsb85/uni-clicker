@@ -19,6 +19,8 @@ ARDUINO_FQBN := STMicroelectronics:stm32:GenF7:pnum=GENERIC_F746ZGTX,xserial=non
 ARDUINO_TARGET := build/arduino/HelloUni.ino
 RUST_TRIPLE := thumbv7em-none-eabihf
 RUST_BUILD_DIR ?= $(CURDIR)/build/rust/cargo
+TONBAND_ROOT ?=
+TRACE_BUILD_DIR ?= $(CURDIR)/build/trace-stm32cube
 
 CMSIS := $(STM32CUBE_F7)/Drivers/CMSIS
 DEVICE := $(CMSIS)/Device/ST/STM32F7xx
@@ -31,6 +33,7 @@ LINK = -Tfirmware/stm32f746.ld -Wl,--gc-sections,-z,noexecstack,-Map,$(@:.elf=.m
 export TMPDIR ?= $(CURDIR)/.cache/tmp
 
 .PHONY: all stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check freertos threadx libopencm3 riot chibios zephyr nuttx micropython mbed-os nanoframework nanoframework-native platformio $(PIO_TARGETS) cli deps-stm32cube check-sdk check-microzig
+.PHONY: tband-stm32cube
 all: stm32cube arduino rust swift cli
 stm32cube: build/stm32cube/hello.bin build/stm32cube/hello.hex
 arduino: $(ARDUINO_TARGET).bin $(ARDUINO_TARGET).hex
@@ -92,10 +95,19 @@ check-sdk:
 build/stm32cube/hello.elf: examples/stm32cube/main.c examples/stm32cube/stm32f7xx_hal_conf.h firmware/stm32f746.ld firmware/startup_support.c Makefile | check-sdk .cache/tmp build/stm32cube
 	$(STM32_GCC) $(CPU) -mfpu=fpv5-sp-d16 -mfloat-abi=hard $(CFLAGS) -I$(HAL)/Inc -Iexamples/stm32cube -nostartfiles --specs=nano.specs --specs=nosys.specs $(LINK) $< $(STARTUP) $(HAL_SRC) -o "$@"
 
+tband-stm32cube: | check-sdk .cache/tmp
+	mkdir -p "$(TRACE_BUILD_DIR)"
+	$(STM32_GCC) $(CPU) -mfpu=fpv5-sp-d16 -mfloat-abi=hard $(CFLAGS) \
+		-DUNI_TBAND_TRACE -I"$(HAL)/Inc" -Iexamples/stm32cube -Iexamples/trace -I"$(TONBAND_ROOT)/tband/inc" \
+		-nostartfiles --specs=nano.specs --specs=nosys.specs -Tfirmware/stm32f746.ld \
+		-Wl,--gc-sections,-z,noexecstack,-Map,"$(TRACE_BUILD_DIR)/hello.map" \
+		examples/stm32cube/main.c examples/trace/uni_trace.c "$(TONBAND_ROOT)/tband/src/tband.c" \
+		"$(TONBAND_ROOT)/tband/src/tband_backend.c" $(STARTUP) $(HAL_SRC) -o "$(TRACE_BUILD_DIR)/hello.elf"
+
 $(ARDUINO_TARGET).elf: examples/arduino/HelloUni/HelloUni.ino Makefile | .cache/tmp build/arduino
 	$(ARDUINO_CLI) compile --optimize-for-debug --fqbn "$(ARDUINO_FQBN)" --build-path "$(CURDIR)/build/arduino" --jobs 4 examples/arduino/HelloUni
 
-build/rust/hello.elf: examples/rust/src/main.rs examples/rust/build.rs examples/rust/memory.x examples/rust/Cargo.toml examples/rust/Cargo.lock Makefile | .cache/tmp build/rust
+build/rust/hello.elf: examples/rust/src/main.rs examples/rust/src/board.rs examples/rust/build.rs examples/rust/memory.x examples/rust/Cargo.toml examples/rust/Cargo.lock Makefile | .cache/tmp build/rust
 	cargo build --locked --release --target $(RUST_TRIPLE) --manifest-path examples/rust/Cargo.toml --target-dir "$(RUST_BUILD_DIR)"
 	cp "$(RUST_BUILD_DIR)/$(RUST_TRIPLE)/release/uni-rust-hello" "$@"
 

@@ -44,6 +44,13 @@ The command builds the profile, inspects its firmware image and runs the Renode 
 
 Add `--hardware` to flash the connected STM32F746ZG via ST-LINK after the simulation passes. This option writes the selected firmware and starts the OpenOCD and GDB verification. The run directory includes the programmer, server and debugger logs.
 
+- `uni-cli check rust --hardware --programmer probe-rs` selects native probe-rs programming with readback and the standard OpenOCD debugger check.
+- `uni-cli check stm32cube --trace` and `uni-cli check freertos --trace` add Tonbandgeraet timing assertions and save a Perfetto artifact.
+- `uni-cli test rust --hardware` runs the separate embedded-test ELF and captures RTT messages.
+- `uni-cli check nuttx --hardware` and `uni-cli check micropython --hardware` use runtime-specific debugger checks. MicroPython flashes the split Intel HEX.
+
+When both `--trace` and `--hardware` are set, the trace stage verifies the instrumented build in Renode and the hardware stage programs the regular firmware.
+
 ## Flash and debug
 
 ```bash

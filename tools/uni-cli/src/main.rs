@@ -6,6 +6,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 mod check;
+mod hex_image;
+mod programmer;
+
+use programmer::Programmer;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -19,14 +23,17 @@ const HELP: &str = "uni-cli <command> [firmware] [endpoint]
   build <firmware|all>                     Build firmware with Make
   analyze <firmware>                      Inspect vectors, sections, and symbols
   probe                                   Identify the MCU over STM32CubeProgrammer SWD
-  flash <firmware>                        Program, verify, and reset the UNI Clicker
+  flash <firmware> [--programmer probe-rs] Program, verify, and reset the UNI Clicker
   debug <firmware> [localhost:3333]         Open an interactive GDB session
   verify <firmware> [localhost:3333]        Check reset and the application in GDB
   simulate <firmware> [smoke|gpio|trace|gdb] Run the firmware in Renode
-  check <firmware> [--hardware]            Build, analyze, simulate, and save a report
+  test rust --hardware                    Run the Rust board regression suite
+  check <firmware> [--trace] [--hardware [--programmer probe-rs]]
+                                          Build, analyze, simulate, and save a report
 
 Profiles: stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check
-          freertos threadx libopencm3 riot chibios zephyr mbed-os nanoframework-native
+          freertos threadx libopencm3 riot chibios zephyr mbed-os nuttx micropython
+          nanoframework-native
           pio-arduino pio-stm32cube pio-cmsis pio-libopencm3 pio-zephyr";
 
 #[derive(Clone, Copy)]
@@ -47,6 +54,8 @@ enum Firmware {
     ChibiOs,
     Zephyr,
     MbedOs,
+    NuttX,
+    MicroPython,
     NanoFramework,
     PioArduino,
     PioStm32Cube,
@@ -74,6 +83,8 @@ impl Firmware {
             "chibios" => Ok(Self::ChibiOs),
             "zephyr" => Ok(Self::Zephyr),
             "mbed-os" => Ok(Self::MbedOs),
+            "nuttx" => Ok(Self::NuttX),
+            "micropython" => Ok(Self::MicroPython),
             "nanoframework-native" => Ok(Self::NanoFramework),
             "pio-arduino" => Ok(Self::PioArduino),
             "pio-stm32cube" => Ok(Self::PioStm32Cube),
@@ -102,6 +113,8 @@ impl Firmware {
             Self::ChibiOs => "chibios",
             Self::Zephyr => "zephyr",
             Self::MbedOs => "mbed-os",
+            Self::NuttX => "nuttx",
+            Self::MicroPython => "micropython",
             Self::NanoFramework => "nanoframework-native",
             Self::PioArduino => "pio-arduino",
             Self::PioStm32Cube => "pio-stm32cube",
@@ -112,6 +125,9 @@ impl Firmware {
     }
 
     fn artifact(self, suffix: &str) -> PathBuf {
+        if matches!(self, Self::MicroPython) {
+            return PathBuf::from(format!("build/micropython/firmware/firmware.{suffix}"));
+        }
         if matches!(self, Self::NanoFramework) {
             return PathBuf::from(if suffix == "elf" {
                 "build/nanoframework/nanoCLR.elf"
@@ -139,6 +155,8 @@ impl Firmware {
             Self::Zig => "zig_entry",
             Self::Mikroc => "mikroc_app_entry",
             Self::MikrocSourceCheck => "mikroc_source_entry",
+            Self::NuttX => "unihello_main",
+            Self::MicroPython => "pyexec_frozen_module",
             Self::NanoFramework => NANO_EMIT,
             _ => "main",
         }
@@ -160,6 +178,8 @@ impl Firmware {
             Self::ChibiOs => "ChibiOS",
             Self::Zephyr | Self::PioZephyr => "Zephyr",
             Self::MbedOs => "Mbed OS",
+            Self::NuttX => "NuttX",
+            Self::MicroPython => "MicroPython",
             Self::NanoFramework => ".NET nanoFramework",
             Self::PioCmsis => "CMSIS",
         };
@@ -169,7 +189,7 @@ impl Firmware {
     fn uart_divisor(self) -> u16 {
         match self {
             Self::Riot => 138,
-            Self::MbedOs => 938,
+            Self::MbedOs | Self::NuttX | Self::MicroPython => 938,
             _ => 139,
         }
     }
@@ -182,20 +202,33 @@ struct Image {
 }
 
 impl Image {
-    fn read(path: &Path, firmware: Firmware) -> Result<Self> {
-        let bytes = fs::read(path)?;
+    fn read(firmware: Firmware) -> Result<Self> {
+        let bytes = match firmware {
+            Firmware::MicroPython => hex_image::read(&firmware.artifact("hex"))?,
+            _ => fs::read(firmware.artifact("bin"))?,
+        };
         if !(8..=FLASH_SIZE).contains(&bytes.len()) {
-            return Err(format!("{} exceeds the STM32F746 flash limits", path.display()).into());
+            return Err(format!(
+                "{} image is outside the STM32F746 flash limits",
+                firmware.name()
+            )
+            .into());
         }
         let stack = u32::from_le_bytes(bytes[..4].try_into()?);
         let reset = u32::from_le_bytes(bytes[4..8].try_into()?);
         let reset_address = reset & !1;
+        let text_offset = if matches!(firmware, Firmware::MicroPython) {
+            0x20000
+        } else {
+            0
+        };
         let image_size = bytes.len() as u32;
-        let reset_in_flash = (FLASH_BASE..FLASH_BASE + image_size).contains(&reset_address);
+        let reset_in_flash =
+            (FLASH_BASE + text_offset..FLASH_BASE + image_size).contains(&reset_address);
         let reset_in_alias = matches!(firmware, Firmware::ChibiOs | Firmware::NanoFramework)
             && (FLASH_ITCM_ALIAS..FLASH_ITCM_ALIAS + image_size).contains(&reset_address);
-        // Native mikroC starts at a word-aligned MSP and aligns it in the first instruction.
-        let stack_alignment = if matches!(firmware, Firmware::Mikroc) {
+        // These startup paths accept the word-aligned MSP from their linker.
+        let stack_alignment = if matches!(firmware, Firmware::Mikroc | Firmware::NuttX) {
             4
         } else {
             8
@@ -268,29 +301,34 @@ fn probe(program: &OsStr) -> Result<()> {
     Ok(())
 }
 
-fn flash(firmware: Firmware) -> Result<()> {
-    let binary = firmware.artifact("bin");
-    Image::read(&binary, firmware)?;
-    let path = binary.canonicalize()?;
-    let programmer = tool("CUBE_PROG", "STM32_Programmer_CLI");
-    let windows_exe = Path::new(&programmer)
+fn host_path(program: &OsStr, path: &Path) -> Result<OsString> {
+    let path = path.canonicalize()?;
+    let windows_exe = Path::new(program)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"));
-    let path = if cfg!(target_os = "linux") && windows_exe {
+    Ok(if cfg!(target_os = "linux") && windows_exe {
         read_stdout(Command::new("wslpath").arg("-w").arg(path))?
             .trim_end_matches(['\r', '\n'])
             .into()
     } else {
         path.into_os_string()
-    };
+    })
+}
+
+fn cube_flash(firmware: Firmware) -> Result<()> {
+    let programmer = tool("CUBE_PROG", "STM32_Programmer_CLI");
+    let hex = matches!(firmware, Firmware::MicroPython);
+    let path = host_path(
+        &programmer,
+        &firmware.artifact(if hex { "hex" } else { "bin" }),
+    )?;
     probe(&programmer)?;
-    let output =
-        read_stdout(
-            cube(&programmer)
-                .arg("-d")
-                .arg(path)
-                .args(["0x08000000", "-v", "-rst"]),
-        )?;
+    let mut command = cube(&programmer);
+    command.arg("-d").arg(path);
+    if !hex {
+        command.arg("0x08000000");
+    }
+    let output = read_stdout(command.args(["-v", "-rst"]))?;
     print!("{output}");
     if !output
         .lines()
@@ -313,9 +351,8 @@ fn symbol_line<'a>(symbols: &'a str, name: &str) -> Result<&'a str> {
 }
 
 fn analyze(firmware: Firmware) -> Result<()> {
-    let binary = firmware.artifact("bin");
     let elf = firmware.artifact("elf");
-    let image = Image::read(&binary, firmware)?;
+    let image = Image::read(firmware)?;
     println!(
         "{} bytes at {FLASH_BASE:#010x}, initial MSP {:#010x}, reset vector {:#010x}",
         image.length, image.stack, image.reset
@@ -327,11 +364,13 @@ fn analyze(firmware: Firmware) -> Result<()> {
 
     let symbols = read_symbols(&elf)?;
     let nano_symbols = [firmware.entry(), "CLRStartupThread"];
+    let python_symbols = [firmware.entry(), "uart_tx_data"];
     let bench_symbols = [firmware.entry(), "uni_heartbeat", "uni_tx_bytes"];
-    let required = if matches!(firmware, Firmware::NanoFramework) {
-        nano_symbols.as_slice()
-    } else {
-        bench_symbols.as_slice()
+    let required = match firmware {
+        Firmware::NanoFramework => nano_symbols.as_slice(),
+        Firmware::MicroPython => python_symbols.as_slice(),
+        Firmware::NuttX => std::slice::from_ref(&bench_symbols[0]),
+        _ => bench_symbols.as_slice(),
     };
     for symbol in required {
         println!("{}", symbol_line(&symbols, symbol)?);
@@ -388,7 +427,7 @@ fn debug(firmware: Firmware, endpoint: Option<&str>, verify: bool) -> Result<()>
         .arg(format!("target extended-remote {endpoint}"));
 
     if verify {
-        let image = Image::read(&firmware.artifact("bin"), firmware)?;
+        let image = Image::read(firmware)?;
         let symbols = read_symbols(&elf)?;
         set_symbol(&mut command, &symbols, "uni_entry", firmware.entry())?;
         command
@@ -396,8 +435,23 @@ fn debug(firmware: Firmware, endpoint: Option<&str>, verify: bool) -> Result<()>
             .arg(format!("set $uni_expected_msp = {:#x}", image.stack))
             .arg("-ex")
             .arg(format!("set $uni_expected_vector = {:#x}", image.reset));
-        if matches!(firmware, Firmware::NanoFramework) {
-            return run(command.args(["-x", "debug/verify-nanoframework.gdb"]));
+        match firmware {
+            Firmware::NanoFramework => {
+                return run(command.args(["-x", "debug/verify-nanoframework.gdb"]));
+            }
+            Firmware::MicroPython | Firmware::NuttX => {
+                if matches!(firmware, Firmware::MicroPython) {
+                    set_symbol(&mut command, &symbols, "uni_emit", "uart_tx_data")?;
+                } else {
+                    set_symbol(&mut command, &symbols, "uni_emit", "puts")?;
+                }
+                command.arg("-ex").arg(format!(
+                    "set $uni_micropython = {}",
+                    u8::from(matches!(firmware, Firmware::MicroPython))
+                ));
+                return run(command.args(["-x", "debug/verify-runtime.gdb"]));
+            }
+            _ => {}
         }
         set_symbol(
             &mut command,
@@ -448,14 +502,18 @@ fn execute(args: &[String]) -> Result<()> {
             };
             run(Command::new("make").arg(target))
         }
+        [cmd, name, option] if cmd == "test" && name == "rust" && option == "--hardware" => {
+            run(&mut Command::new("tools/test-rust-board.sh"))
+        }
         [cmd] if cmd == "probe" => probe(&tool("CUBE_PROG", "STM32_Programmer_CLI")),
-        [cmd, name, flags @ ..]
-            if cmd == "check" && (flags.is_empty() || flags == ["--hardware"]) =>
-        {
-            check::run_check(Firmware::parse(name)?, !flags.is_empty())
+        [cmd, name, flags @ ..] if cmd == "check" => {
+            check::run_check(Firmware::parse(name)?, flags)
         }
         [cmd, name] if cmd == "analyze" => analyze(Firmware::parse(name)?),
-        [cmd, name] if cmd == "flash" => flash(Firmware::parse(name)?),
+        [cmd, name] if cmd == "flash" => Programmer::Cube.flash(Firmware::parse(name)?),
+        [cmd, name, option, programmer] if cmd == "flash" && option == "--programmer" => {
+            Programmer::parse(programmer)?.flash(Firmware::parse(name)?)
+        }
         [cmd, name, rest @ ..] if cmd == "simulate" && rest.len() <= 1 => {
             let firmware = Firmware::parse(name)?;
             let mut command = Command::new("tools/simulate.sh");

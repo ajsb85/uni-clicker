@@ -1,5 +1,9 @@
 #include "stm32f7xx_hal.h"
 
+#ifdef UNI_TBAND_TRACE
+#include "uni_trace.h"
+#endif
+
 volatile uint32_t uni_heartbeat;
 volatile uint32_t uni_tx_bytes;
 
@@ -23,6 +27,9 @@ static void write_banner(void)
 void SysTick_Handler(void)
 {
     HAL_IncTick();
+#ifdef UNI_TBAND_TRACE
+    uni_trace_tick();
+#endif
 }
 
 int main(void)
@@ -60,13 +67,36 @@ int main(void)
     };
     require_ok(HAL_UART_Init(&uart));
 
+#ifdef UNI_TBAND_TRACE
+    tband_gather_system_metadata();
+    tband_evtmarker_name(0, "LED C wait");
+    tband_valmarker_name(0, "Heartbeat");
+    uni_trace_start();
+#endif
     write_banner();
     for (;;) {
+#ifdef UNI_TBAND_TRACE
+        tband_evtmarker_begin(0, "500 ms delay");
+#endif
         HAL_Delay(500);
+#ifdef UNI_TBAND_TRACE
+        tband_evtmarker_end(0);
+#endif
         HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_7);
         ++uni_heartbeat;
+#ifdef UNI_TBAND_TRACE
+        tband_valmarker(0, uni_heartbeat);
+#endif
         if ((uni_heartbeat & 1U) == 0) {
             write_banner();
+#ifdef UNI_TBAND_TRACE
+            if (uni_heartbeat == 2) {
+                uni_trace_stop();
+                for (;;) {
+                    __WFI();
+                }
+            }
+#endif
         }
     }
 }

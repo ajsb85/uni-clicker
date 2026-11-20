@@ -8,6 +8,20 @@ publish = false
 cortex-m = "0.7.7"
 cortex-m-rt = "0.7.5"
 
+[dev-dependencies]
+cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
+embedded-test = "0.7"
+rtt-target = "0.6"
+
+[[bin]]
+name = "uni-rust-hello"
+test = false
+harness = false
+
+[[test]]
+name = "board"
+harness = false
+
 [profile.release]
 debug = 2
 opt-level = "s"
