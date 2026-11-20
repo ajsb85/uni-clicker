@@ -32,6 +32,18 @@ make all
 
 `make all` builds the original four examples and the host CLI. The remaining profiles use individual Make targets and the SDK paths listed in the [Mikroe](docs/mikroe.md) and [framework](docs/frameworks.md) guides. Outputs are ELF with debug information, BIN, and Intel HEX under `build/<toolchain>/`. `STM32CUBE_F7` can point to a local STM32CubeF7 tree with CMSIS and HAL populated. `STM32_GCC`, `ARDUINO_CLI`, and `SWIFTC` select alternate tool installations.
 
+## Run a firmware check
+
+```bash
+source tools/bench-env.sh
+make cli
+build/cli/debug/uni-cli check stm32cube
+```
+
+The command builds the profile, inspects its firmware image and runs the Renode smoke test. It prints the path to a `report.tsv` file under `.cache/verification/check.*` with each stage's status, elapsed time and log filename. A failed stage sets a nonzero exit status and marks the remaining stages skipped. See `uni-cli help` for the supported profiles.
+
+Add `--hardware` to flash the connected STM32F746ZG via ST-LINK after the simulation passes. This option writes the selected firmware and starts the OpenOCD and GDB verification. The run directory includes the programmer, server and debugger logs.
+
 ## Flash and debug
 
 ```bash

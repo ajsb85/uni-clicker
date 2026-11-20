@@ -5,6 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+mod check;
+
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 const FLASH_BASE: u32 = 0x0800_0000;
@@ -21,6 +23,7 @@ const HELP: &str = "uni-cli <command> [firmware] [endpoint]
   debug <firmware> [localhost:3333]         Open an interactive GDB session
   verify <firmware> [localhost:3333]        Check reset and the application in GDB
   simulate <firmware> [smoke|gpio|trace|gdb] Run the firmware in Renode
+  check <firmware> [--hardware]            Build, analyze, simulate, and save a report
 
 Profiles: stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check
           freertos threadx libopencm3 riot chibios zephyr mbed-os nanoframework-native
@@ -446,6 +449,11 @@ fn execute(args: &[String]) -> Result<()> {
             run(Command::new("make").arg(target))
         }
         [cmd] if cmd == "probe" => probe(&tool("CUBE_PROG", "STM32_Programmer_CLI")),
+        [cmd, name, flags @ ..]
+            if cmd == "check" && (flags.is_empty() || flags == ["--hardware"]) =>
+        {
+            check::run_check(Firmware::parse(name)?, !flags.is_empty())
+        }
         [cmd, name] if cmd == "analyze" => analyze(Firmware::parse(name)?),
         [cmd, name] if cmd == "flash" => flash(Firmware::parse(name)?),
         [cmd, name, rest @ ..] if cmd == "simulate" && rest.len() <= 1 => {

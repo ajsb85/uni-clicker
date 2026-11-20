@@ -86,6 +86,8 @@ For vendor executables, use `wslpath -w` when passing an image or directory to W
 
 ## Develop, verify, and debug
 
+For unattended firmware checks, run `"$cli" check <profile>` with the bench environment loaded. The command builds, inspects the image, runs the Renode smoke test and saves per-stage logs alongside `report.tsv` under `.cache/verification/check.*`. Read the `result` row and open the failing stage's log before retrying. Checks for the same profile take a shared lock file so their build artifacts stay consistent. Add `--hardware` for an authorized flash and GDB verification after simulation passes. The hardware stage uses the bench probe lock and releases OpenOCD when done. [CLI usage](README.md#run-a-firmware-check)
+
 1. Build the changed profile with `make <profile>`. Use `make all` for the standard compiler set and the individual targets for additional SDKs. Keep the ELF with debug information, BIN, and HEX from the same build. Use `arm-none-eabi-nm -n`, `readelf -l`, `objdump -dSl`, and `uni-cli analyze` before touching hardware.
 2. Run `tools/simulate.sh <profile>` and the relevant [Renode scenario](docs/renode.md). The minimum hello firmware convention is the banner at boot and each second, PD7 transitions each 500 ms, and 32-bit `uni_heartbeat` and `uni_tx_bytes` symbols.
 3. Keep one hardware owner. Stop any probe session before `"$cli" flash <profile>`. CubeProgrammer uses SWD connect-under-reset, verifies bytes, and resets the MCU. The original 1 MiB image is backed up locally. Retain the flash backup privately with any other bench-only evidence.

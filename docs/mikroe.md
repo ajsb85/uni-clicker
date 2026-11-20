@@ -101,4 +101,6 @@ The native image was flashed and debugged through the detected ST-LINK V2. The i
 
 Windows enumerated the ST-LINK V2 and the HID compiler key during the framework and PlatformIO runs. The compiler key's device description was `mE Dongle mC ARM`. A separate classic mikroProg, CODEGRIP or FTDI probe was absent from the Windows inventory. The physical flash and debugger results here use the ST-LINK V2.
 
+On 2026-11-20, Windows recorded a USB reconnect for `STM32 STLink` (`0483:3748`). The HID key (`1011:0022`) remained present. The FTDI library bundled with mikroProg Suite independently returned zero attached devices. Use `DEVPKEY_Device_LastArrivalDate` and `DEVPKEY_Device_BusReportedDeviceDesc` in `Get-PnpDeviceProperty` to identify which device was reconnected before changing the SWD switch or starting the classic programmer.
+
 When the classic probe appears, use the local `mikroprog-stm32-manual-v100.pdf` and `mikroProg Suite For ARM/mikroProg Suite for ARM.exe`. For the classic programmer connection, the UNI Clicker switch is SW1 OFF/down. Confirm the probe and MCU in the programmer before writing an image. The existing ST-LINK setup uses SW1 ON/up. [Bench connector and switch details](../AGENT.MD)

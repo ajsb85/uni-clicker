@@ -7,28 +7,43 @@ if [[ $# -eq 0 ]]; then
 fi
 
 source tools/bench-env.sh
-make cli
-cli=build/cli/debug/uni-cli
-mkdir -p .cache/verification
-run=$(mktemp -d "$PWD/.cache/verification/bench.XXXXXX")
+if [[ -n "${UNI_VERIFY_CLI:-}" ]]; then
+    cli=$UNI_VERIFY_CLI
+else
+    make cli
+    cli=build/cli/debug/uni-cli
+fi
+if [[ -n "${UNI_VERIFY_LOG_DIR:-}" ]]; then
+    run=$UNI_VERIFY_LOG_DIR
+    mkdir -p "$run"
+else
+    mkdir -p .cache/verification
+    run=$(mktemp -d "$PWD/.cache/verification/bench.XXXXXX")
+fi
 exec 9>.cache/probe.lock
 flock -n 9 || { echo 'Another bench run owns the probe.' >&2; exit 1; }
 port=${UNI_GDB_PORT:-3333}
 endpoint="127.0.0.1:$port"
 server=
+ready=false
 stop_server() {
     if [[ -n "$server" ]]; then
-        timeout 6s "${GDB:-gdb-multiarch}" -q -nx -batch -ex 'set remotetimeout 2' \
-            -ex "target extended-remote $endpoint" -ex 'monitor resume' \
-            -ex 'monitor shutdown' >"$run/shutdown.log" 2>&1 || true
+        if [[ "$ready" == true ]]; then
+            timeout 6s "${GDB:-gdb-multiarch}" -q -nx -batch -ex 'set remotetimeout 2' \
+                -ex "target extended-remote $endpoint" -ex 'monitor resume' \
+                -ex 'monitor shutdown' >"$run/shutdown.log" 2>&1 || true
+        fi
         if kill -0 "$server" 2>/dev/null; then
             kill "$server" 2>/dev/null || true
         fi
         wait "$server" 2>/dev/null || true
         server=
+        ready=false
     fi
 }
 trap stop_server EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 for image; do
     "$cli" analyze "$image" >"$run/$image-elf.txt"
