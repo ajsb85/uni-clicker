@@ -31,6 +31,7 @@ const HELP: &str = "uni-cli <command> [firmware] [endpoint]
   check <firmware> [--trace] [--hardware-trace] [--hardware [--programmer probe-rs]]
                                           Build, analyze, simulate, and save a report
   capture-trace --hardware <elf> <dir>    Flash and recover a bounded SWD snapshot
+  systemview [--hardware]                Verify SystemView and RTT capture
 
 Profiles: stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check
           freertos freertos-console threadx libopencm3 riot chibios zephyr mbed-os nuttx micropython
@@ -529,6 +530,9 @@ fn execute(args: &[String]) -> Result<()> {
         }
         [cmd, option, elf, directory] if cmd == "capture-trace" && option == "--hardware" => {
             programmer::capture_trace(Path::new(elf), Path::new(directory))
+        }
+        [cmd, flags @ ..] if cmd == "systemview" => {
+            run(Command::new("tools/check-systemview.sh").args(flags))
         }
         [cmd] if cmd == "probe" => probe(&tool("CUBE_PROG", "STM32_Programmer_CLI")),
         [cmd, name, flags @ ..] if cmd == "check" => {

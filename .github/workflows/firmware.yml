@@ -31,7 +31,7 @@ jobs:
           RENODE_SHA256: 4ba7c68b59e2447f188ef4b4b112fcccd2802582c460beedceb63b84e5605a5f
         run: |
           source tools/bench-env.sh
-          make deps-stm32cube
+          make deps-stm32cube deps-segger
           cache="$PWD/.cache/ci"
           mkdir -p "$cache/renode"
           checkout() {
@@ -53,6 +53,7 @@ jobs:
           "$renode" --version
 
           cargo fetch --locked --manifest-path examples/rust/Cargo.toml --target thumbv7em-none-eabihf
+          cargo fetch --locked --manifest-path tools/systemview-cli/Cargo.toml
           CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 cargo build --locked \
             --manifest-path "$cache/tonbandgeraet/tools/Cargo.toml" --target-dir "$cache/target" \
             -p tband-cli --no-default-features
@@ -69,6 +70,7 @@ jobs:
         run: |
           source tools/bench-env.sh
           cargo test --locked --manifest-path tools/uni-cli/Cargo.toml --target-dir build/cli
+          cargo test --locked --manifest-path tools/systemview-cli/Cargo.toml --target-dir build/systemview-cli
           make cli
           cli=build/cli/debug/uni-cli
           result=0
@@ -76,6 +78,7 @@ jobs:
           for profile in stm32cube freertos freertos-console; do
               "$cli" check "$profile" --trace || result=1
           done
+          "$cli" systemview || result=1
           exit "$result"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

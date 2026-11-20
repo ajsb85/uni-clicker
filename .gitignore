@@ -1,5 +1,6 @@
 /.cache/
 /build/
+/SystemView/
 **/target/
 /examples/zig/zig-pkg/
 /examples/frameworks/riot/bin/

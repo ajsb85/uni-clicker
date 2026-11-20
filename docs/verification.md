@@ -146,3 +146,9 @@ Windows continued to enumerate ST-LINK and the mikroC dongle. The CODEGRIP USB s
 | Tonbandgeraet ISR-to-task measurements | 16 matched enqueue and dequeue sequences with zero dropped trace events |
 
 The Renode TIM2 trace measured 81–82 µs for isolated commands and 388–402 µs for the burst. The assertions allow up to 500 µs and 1,500 µs, respectively. These values measure the virtual interval from successful ISR enqueue to task dequeue. The report includes `trace/latency.tsv`, the exact USART6 transcript, the injected scenario, raw and decoded traces, and `provenance.tsv` with firmware hashes and tool versions. [Reproduce the checks](../AGENT.MD#timing-captures-and-usart6-console)
+
+## SEGGER SystemView and RTT
+
+The Cortex-M7 demo used SEGGER SystemView at `92ca7a81` and RTT at `9106eaa3`. Renode verified the USART6 greeting, the exact RTT terminal greeting on channel 0, the Start and Stop commands on channel 1, and three PD7 markers in a 900 ms recording. The resulting 117-byte recording decoded into 10 events. Renode reported clear CFSR and HFSR.
+
+On the physical UNI Clicker, Windows OpenOCD flashed and verified the same ELF with ST-LINK. It found the RTT control block using the ELF symbol and streamed channel 1 to the WSL Rust decoder. A two-second capture produced 147 bytes, 15 decoded events, and eight PD7 markers. Both captures showed 250 ms between markers and zero dropped events. The physical check also verified the 22-byte RTT terminal greeting from SRAM. [Reproduction commands and artifact paths](../AGENT.MD#systemview-and-rtt)

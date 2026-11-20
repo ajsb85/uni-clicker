@@ -21,6 +21,9 @@ RUST_TRIPLE := thumbv7em-none-eabihf
 RUST_BUILD_DIR ?= $(CURDIR)/build/rust/cargo
 TONBAND_ROOT ?=
 TRACE_BUILD_DIR ?= $(CURDIR)/build/trace-stm32cube
+SEGGER_SYSTEMVIEW_ROOT ?= $(CURDIR)/.cache/vendor/segger/SystemView
+SEGGER_RTT_ROOT ?= $(CURDIR)/.cache/vendor/segger/RTT
+SYSTEMVIEW_BUILD_DIR ?= $(CURDIR)/build/systemview
 
 CMSIS := $(STM32CUBE_F7)/Drivers/CMSIS
 DEVICE := $(CMSIS)/Device/ST/STM32F7xx
@@ -33,7 +36,7 @@ LINK = -Tfirmware/stm32f746.ld -Wl,--gc-sections,-z,noexecstack,-Map,$(@:.elf=.m
 export TMPDIR ?= $(CURDIR)/.cache/tmp
 
 .PHONY: all stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check freertos threadx libopencm3 riot chibios zephyr nuttx micropython mbed-os nanoframework nanoframework-native platformio $(PIO_TARGETS) cli deps-stm32cube check-sdk check-microzig
-.PHONY: tband-stm32cube freertos-console
+.PHONY: tband-stm32cube freertos-console deps-segger systemview-elf systemview-cli
 all: stm32cube arduino rust swift cli
 stm32cube: build/stm32cube/hello.bin build/stm32cube/hello.hex
 arduino: $(ARDUINO_TARGET).bin $(ARDUINO_TARGET).hex
@@ -89,6 +92,26 @@ cli: | .cache/tmp
 
 deps-stm32cube: | .cache/tmp
 	tools/fetch-stm32cube.sh "$(STM32CUBE_F7)"
+
+deps-segger: | .cache/tmp
+	tools/fetch-segger.sh "$(CURDIR)/.cache/vendor/segger"
+
+systemview-cli: | .cache/tmp
+	cargo build --locked --manifest-path tools/systemview-cli/Cargo.toml --target-dir build/systemview-cli
+
+systemview-elf: | check-sdk .cache/tmp
+	@test -f "$(SEGGER_SYSTEMVIEW_ROOT)/SYSVIEW/SEGGER_SYSVIEW.c" && test -f "$(SEGGER_RTT_ROOT)/RTT/SEGGER_RTT.c" \
+		|| { echo 'Run make deps-segger or set SEGGER_SYSTEMVIEW_ROOT and SEGGER_RTT_ROOT.' >&2; exit 1; }
+	mkdir -p "$(SYSTEMVIEW_BUILD_DIR)"
+	$(STM32_GCC) $(CPU) -mfloat-abi=soft $(CFLAGS) -nostartfiles --specs=nano.specs --specs=nosys.specs \
+		-DSEGGER_RTT_MAX_NUM_UP_BUFFERS=2 -DSEGGER_RTT_MAX_NUM_DOWN_BUFFERS=2 \
+		-Iexamples/systemview -Iexamples/frameworks/common \
+		-I"$(SEGGER_SYSTEMVIEW_ROOT)/SYSVIEW" -I"$(SEGGER_SYSTEMVIEW_ROOT)/SEGGER" -I"$(SEGGER_SYSTEMVIEW_ROOT)/Config" \
+		-I"$(SEGGER_RTT_ROOT)/RTT" -I"$(SEGGER_RTT_ROOT)/Config" \
+		-Tfirmware/stm32f746.ld -Wl,--gc-sections,-z,noexecstack,-Map,"$(SYSTEMVIEW_BUILD_DIR)/hello.map" \
+		examples/systemview/main.c examples/frameworks/common/board.c $(STARTUP) \
+		"$(SEGGER_SYSTEMVIEW_ROOT)/SYSVIEW/SEGGER_SYSVIEW.c" "$(SEGGER_RTT_ROOT)/RTT/SEGGER_RTT.c" \
+		"$(SEGGER_RTT_ROOT)/RTT/SEGGER_RTT_ASM_ARMv7M.S" -o "$(SYSTEMVIEW_BUILD_DIR)/hello.elf"
 
 check-sdk:
 	@test -f "$(DEVICE)/Include/stm32f746xx.h" || { echo 'Run make deps-stm32cube or set STM32CUBE_F7.' >&2; exit 1; }

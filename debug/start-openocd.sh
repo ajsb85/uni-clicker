@@ -16,4 +16,4 @@ if [[ -n "${OPENOCD_SCRIPTS:-}" ]]; then
     scripts=(-s "$directory")
 fi
 exec "$openocd" "${scripts[@]}" -f interface/stlink.cfg -f target/stm32f7x.cfg \
-    -c "bindto 127.0.0.1; gdb port $port; tcl port disabled; telnet port disabled; adapter speed 240; init"
+    -c "bindto 127.0.0.1; gdb port $port; tcl port disabled; telnet port disabled; adapter speed 240; init" "$@"

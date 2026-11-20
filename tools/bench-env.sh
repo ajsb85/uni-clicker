@@ -8,6 +8,12 @@ export CUBE_PROG="${CUBE_PROG:-$UNI_WINDOWS_ROOT/STM32CubeProgrammer/bin/STM32_P
 export OPENOCD="${OPENOCD:-$uni_assets/xpack-openocd-0.12.0-7/bin/openocd.exe}"
 export OPENOCD_SCRIPTS="${OPENOCD_SCRIPTS:-$uni_assets/xpack-openocd-0.12.0-7/openocd/scripts}"
 export PROBE_RS="${PROBE_RS:-$uni_assets/probe-rs/v0.32.0/probe-rs.exe}"
+uni_segger="$uni_assets/segger"
+if [[ ! -d "$uni_segger/SystemView/.git" || ! -d "$uni_segger/RTT/.git" ]]; then
+    uni_segger="$uni_root/.cache/vendor/segger"
+fi
+export SEGGER_SYSTEMVIEW_ROOT="${SEGGER_SYSTEMVIEW_ROOT:-$uni_segger/SystemView}"
+export SEGGER_RTT_ROOT="${SEGGER_RTT_ROOT:-$uni_segger/RTT}"
 export RENODE="${RENODE:-$uni_root/.cache/tools/renode/renode}"
 export SWIFTC="${SWIFTC:-$uni_assets/swift/usr/bin/swiftc}"
 export ARDUINO_DIRECTORIES_DATA="${ARDUINO_DIRECTORIES_DATA:-$uni_root/.cache/arduino-fast-data}"
@@ -45,4 +51,4 @@ export PLATFORMIO="${PLATFORMIO:-$uni_root/.cache/platformio-venv/bin/pio}"
 export PLATFORMIO_CORE_DIR="${PLATFORMIO_CORE_DIR:-$uni_pio}"
 
 mkdir -p "$TMPDIR"
-unset uni_root uni_assets uni_sdk uni_pio
+unset uni_root uni_assets uni_sdk uni_pio uni_segger

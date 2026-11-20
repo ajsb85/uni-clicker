@@ -49,6 +49,8 @@ Paths in the right column are relative to `$UNI_WINDOWS_ROOT` unless prefixed wi
 | Native Rust programmer and debugger | `.uni-clicker-lab-cache/probe-rs/v0.32.0/` contains `probe-rs.exe`, `cargo-flash.exe`, and `cargo-embed.exe`. WSL provides `rust-gdb` through rustup and `gdb-multiarch` |
 | probe-rs organization sources | `probe-rs/` has all 38 public repositories. The WSL inventory and checkout revisions are in `.cache/probe-rs-org/{repositories,revisions}.tsv` |
 | Tonbandgeraet timing traces | `Tonbandgeraet/` at `73aa9e44`; `.cache/tonbandgeraet-stage` points to the staged headless converter, FreeRTOS captures, and STM32F746ZG Renode experiment |
+| SEGGER recorder and RTT firmware | `.uni-clicker-lab-cache/segger/{SystemView,RTT}` on Windows at `92ca7a81` and `9106eaa3`. For WSL-only builds, `make deps-segger` fetches both pinned revisions into `.cache/vendor/segger/`. |
+| SEGGER samples and manual | `SystemView/` contains `UM08027_SystemView.pdf`, sample `.SVDat` recordings, and `Description/SYSVIEW_*.txt` catalogs. The WSL decoder is in `tools/systemview-cli/`. |
 | Swift examples and installed compiler | `swift-embedded-examples/stm32-{blink,uart-echo}/`, `.uni-clicker-lab-cache/swift/usr/bin/swiftc` |
 | Zig and MicroZig | `zig` on WSL PATH, version 0.17.1; `microzig/` commit `f629434`; `port/stmicro/stm32/src/Chips.zig` has the F746ZG target |
 | Vendor classic ARM compiler | `mikroC PRO for ARM/mikroCARM.exe`, `Defs/STM32F746ZG.c`, `Uses/`, `Examples/ST/`, `mikroc_PRO_ARM.chm` in that install |
@@ -144,7 +146,24 @@ Each `--trace` run builds an instrumented ELF and recovers a bounded snapshot fr
 
 Run `"$cli" check freertos-console --trace --hardware` for the full Renode input suite and the physical boot check of the regular ELF. Renode exercises split input, LF and CRLF, malformed lines, unknown commands, PD7, a ten-line burst, and recovery. The trace pairs ISR enqueue and task dequeue markers against the 1 MHz TIM2 clock and saves `trace/latency.tsv`. The board debugger checks reset and source stepping, pin mode, baud divisor, RX interrupt enable, the ready banner byte count, and fault state. Physical trace automation currently covers the self-finishing STM32Cube and FreeRTOS greeting images. [Bench observations](docs/verification.md#automated-swd-traces-and-usart6-console)
 
-Review `report.tsv` for stage results and `provenance.tsv` for the Git commit, tracked changes, firmware and trace ELF hashes, and tool versions. The GitHub workflow installs pinned SDK and simulator inputs, then runs the Rust, STM32Cube, FreeRTOS, and console checks on Ubuntu. The test step builds Cargo packages from the local cache, uses local Renode models, and uploads the reports. The WSL hardware commands remain explicit bench runs. [Firmware simulation workflow](.github/workflows/firmware.yml)
+Review `report.tsv` for stage results and `provenance.tsv` for the Git commit, tracked changes, firmware and trace ELF hashes, and tool versions. The GitHub workflow installs pinned SDK and simulator inputs, then runs the Rust, STM32Cube, FreeRTOS, console, and SystemView checks on Ubuntu. The test step builds Cargo packages from the local cache, uses local Renode models, and uploads the reports. The WSL hardware commands require the explicit flag. [Firmware simulation workflow](.github/workflows/firmware.yml)
+
+## SystemView and RTT
+
+```bash
+source tools/bench-env.sh
+make cli
+cli=build/cli/debug/uni-cli
+"$cli" systemview
+"$cli" systemview --hardware
+"$cli" check rust --hardware --programmer probe-rs
+```
+
+The check builds the Cortex-M7 demo in `examples/systemview/` using the official SEGGER sources. Use `SEGGER_SYSTEMVIEW_ROOT` and `SEGGER_RTT_ROOT` for alternate checkouts. RTT channel 0 carries the terminal greeting and channel 1 carries SystemView binary events and host commands. The firmware uses a 1 kHz SysTick timestamp. After the host sends Start, it toggles PD7 and emits a named marker every 250 ms until Stop.
+
+Renode sends Start and Stop by writing the RTT down descriptor and extracts both RTT up buffers. It verifies the UART greeting, exact RTT terminal output, three heartbeat markers, and clear fault registers. The hardware flag acquires `.cache/probe.lock`, checks the target ID and flash size, and uses Windows OpenOCD to flash and verify the ELF. OpenOCD discovers the RTT control block from the matching ELF symbol and exposes channel 1 on localhost TCP port 9090. The WSL Rust CLI drives the capture for two seconds. The final command above restores the Rust greeting.
+
+Look under `.cache/verification/systemview.*/` for the ELF, map, and provenance. Under `renode/` and `hardware/`, inspect `trace.bin`, `events.jsonl`, `summary.json`, and `terminal.txt`. The script checks start and stop frames, metadata, 250 ms marker spacing, and zero dropped events. To investigate an event, use `build/systemview-cli/debug/systemview-cli decode RECORDING --event mark`. The same executable can summarize downloaded SEGGER `.SVDat` samples. [Decoder and capture options](tools/systemview-cli/README.md)
 
 ## Arduino CLI upload and debugger
 
