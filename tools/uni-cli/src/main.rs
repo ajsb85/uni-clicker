@@ -28,11 +28,12 @@ const HELP: &str = "uni-cli <command> [firmware] [endpoint]
   verify <firmware> [localhost:3333]        Check reset and the application in GDB
   simulate <firmware> [smoke|gpio|trace|gdb] Run the firmware in Renode
   test rust --hardware                    Run the Rust board regression suite
-  check <firmware> [--trace] [--hardware [--programmer probe-rs]]
+  check <firmware> [--trace] [--hardware-trace] [--hardware [--programmer probe-rs]]
                                           Build, analyze, simulate, and save a report
+  capture-trace --hardware <elf> <dir>    Flash and recover a bounded SWD snapshot
 
 Profiles: stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check
-          freertos threadx libopencm3 riot chibios zephyr mbed-os nuttx micropython
+          freertos freertos-console threadx libopencm3 riot chibios zephyr mbed-os nuttx micropython
           nanoframework-native
           pio-arduino pio-stm32cube pio-cmsis pio-libopencm3 pio-zephyr";
 
@@ -48,6 +49,7 @@ enum Firmware {
     Mikroc,
     MikrocSourceCheck,
     FreeRtos,
+    FreeRtosConsole,
     ThreadX,
     LibOpenCm3,
     Riot,
@@ -77,6 +79,7 @@ impl Firmware {
             "mikroc" => Ok(Self::Mikroc),
             "mikroc-source-check" => Ok(Self::MikrocSourceCheck),
             "freertos" => Ok(Self::FreeRtos),
+            "freertos-console" => Ok(Self::FreeRtosConsole),
             "threadx" => Ok(Self::ThreadX),
             "libopencm3" => Ok(Self::LibOpenCm3),
             "riot" => Ok(Self::Riot),
@@ -107,6 +110,7 @@ impl Firmware {
             Self::Mikroc => "mikroc",
             Self::MikrocSourceCheck => "mikroc-source-check",
             Self::FreeRtos => "freertos",
+            Self::FreeRtosConsole => "freertos-console",
             Self::ThreadX => "threadx",
             Self::LibOpenCm3 => "libopencm3",
             Self::Riot => "riot",
@@ -163,6 +167,9 @@ impl Firmware {
     }
 
     fn banner_size(self) -> usize {
+        if matches!(self, Self::FreeRtosConsole) {
+            return "READY 115200 8N1\r\n".len();
+        }
         let language = match self {
             Self::Stm32Cube | Self::PioStm32Cube => "STM32Cube",
             Self::Arduino | Self::PioArduino => "Arduino",
@@ -171,7 +178,7 @@ impl Firmware {
             Self::Zig => "Zig",
             Self::Necto | Self::NectoWindows => "NECTO",
             Self::Mikroc | Self::MikrocSourceCheck => "mikroC",
-            Self::FreeRtos => "FreeRTOS",
+            Self::FreeRtos | Self::FreeRtosConsole => "FreeRTOS",
             Self::ThreadX => "ThreadX",
             Self::LibOpenCm3 | Self::PioLibOpenCm3 => "libopencm3",
             Self::Riot => "RIOT",
@@ -365,10 +372,12 @@ fn analyze(firmware: Firmware) -> Result<()> {
     let symbols = read_symbols(&elf)?;
     let nano_symbols = [firmware.entry(), "CLRStartupThread"];
     let python_symbols = [firmware.entry(), "uart_tx_data"];
+    let console_symbols = [firmware.entry(), "USART6_IRQHandler", "uni_console_ready"];
     let bench_symbols = [firmware.entry(), "uni_heartbeat", "uni_tx_bytes"];
     let required = match firmware {
         Firmware::NanoFramework => nano_symbols.as_slice(),
         Firmware::MicroPython => python_symbols.as_slice(),
+        Firmware::FreeRtosConsole => console_symbols.as_slice(),
         Firmware::NuttX => std::slice::from_ref(&bench_symbols[0]),
         _ => bench_symbols.as_slice(),
     };
@@ -439,6 +448,19 @@ fn debug(firmware: Firmware, endpoint: Option<&str>, verify: bool) -> Result<()>
             Firmware::NanoFramework => {
                 return run(command.args(["-x", "debug/verify-nanoframework.gdb"]));
             }
+            Firmware::FreeRtosConsole => {
+                set_symbol(
+                    &mut command,
+                    &symbols,
+                    "uni_ready_address",
+                    "uni_console_ready",
+                )?;
+                set_symbol(&mut command, &symbols, "uni_tx_address", "uni_tx_bytes")?;
+                return run(command
+                    .arg("-ex")
+                    .arg(format!("set $uni_banner_size = {}", firmware.banner_size()))
+                    .args(["-x", "debug/verify-freertos-console.gdb"]));
+            }
             Firmware::MicroPython | Firmware::NuttX => {
                 if matches!(firmware, Firmware::MicroPython) {
                     set_symbol(&mut command, &symbols, "uni_emit", "uart_tx_data")?;
@@ -504,6 +526,9 @@ fn execute(args: &[String]) -> Result<()> {
         }
         [cmd, name, option] if cmd == "test" && name == "rust" && option == "--hardware" => {
             run(&mut Command::new("tools/test-rust-board.sh"))
+        }
+        [cmd, option, elf, directory] if cmd == "capture-trace" && option == "--hardware" => {
+            programmer::capture_trace(Path::new(elf), Path::new(directory))
         }
         [cmd] if cmd == "probe" => probe(&tool("CUBE_PROG", "STM32_Programmer_CLI")),
         [cmd, name, flags @ ..] if cmd == "check" => {

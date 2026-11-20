@@ -5,17 +5,19 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use crate::{Firmware, Programmer, Result, run};
+use crate::{Firmware, Programmer, Result, read_stdout, run, tool};
 
 pub(super) fn run_check(firmware: Firmware, flags: &[String]) -> Result<()> {
     let mut hardware = false;
     let mut trace = false;
+    let mut hardware_trace = false;
     let mut programmer = None;
     let mut arguments = flags.iter();
     while let Some(flag) = arguments.next() {
         match flag.as_str() {
             "--hardware" if !hardware => hardware = true,
             "--trace" if !trace => trace = true,
+            "--hardware-trace" if !hardware_trace => hardware_trace = true,
             "--programmer" if programmer.is_none() => {
                 programmer = Some(Programmer::parse(
                     arguments.next().ok_or("--programmer requires a value")?,
@@ -29,8 +31,16 @@ pub(super) fn run_check(firmware: Firmware, flags: &[String]) -> Result<()> {
     }
     let programmer = programmer.unwrap_or(Programmer::Cube);
     programmer.validate(firmware)?;
-    if trace && !matches!(firmware, Firmware::Stm32Cube | Firmware::FreeRtos) {
-        return Err("--trace supports stm32cube and freertos".into());
+    if trace
+        && !matches!(
+            firmware,
+            Firmware::Stm32Cube | Firmware::FreeRtos | Firmware::FreeRtosConsole
+        )
+    {
+        return Err("trace checks support stm32cube, freertos, and freertos-console".into());
+    }
+    if hardware_trace && !matches!(firmware, Firmware::Stm32Cube | Firmware::FreeRtos) {
+        return Err("hardware trace checks support stm32cube and freertos".into());
     }
 
     let name = firmware.name();
@@ -79,9 +89,11 @@ pub(super) fn run_check(firmware: Firmware, flags: &[String]) -> Result<()> {
 
     let started = Instant::now();
     let mut failed_stage = None;
+    let mut built = false;
     let stages = ["build", "analyze", "simulate"]
         .into_iter()
         .chain(trace.then_some("trace"))
+        .chain(hardware_trace.then_some("hardware-trace"))
         .chain(["hardware"]);
     for stage in stages {
         if failed_stage.is_some() || (stage == "hardware" && !hardware) {
@@ -96,9 +108,15 @@ pub(super) fn run_check(firmware: Firmware, flags: &[String]) -> Result<()> {
                 .env("UNI_VERIFY_PROGRAMMER", programmer.name())
                 .env("UNI_VERIFY_LOG_DIR", directory.join("hardware"));
             command
-        } else if stage == "trace" {
+        } else if matches!(stage, "trace" | "hardware-trace") {
             let mut command = Command::new("tools/check-tonbandgeraet.sh");
-            command.arg(name).arg(directory.join("trace"));
+            command
+                .arg(name)
+                .arg(directory.join(stage))
+                .env("UNI_TRACE_CLI", &cli);
+            if stage == "hardware-trace" {
+                command.arg("--hardware");
+            }
             command
         } else {
             let mut command = Command::new(&cli);
@@ -109,7 +127,12 @@ pub(super) fn run_check(firmware: Firmware, flags: &[String]) -> Result<()> {
         println!("Running {stage} for {name}");
         let stage_start = Instant::now();
         let status = match run_logged(&mut command, &directory.join(&log_name)) {
-            Ok(()) => "passed",
+            Ok(()) => {
+                if stage == "build" {
+                    built = true;
+                }
+                "passed"
+            }
             Err(error) => {
                 failed_stage = Some((stage, error));
                 "failed"
@@ -118,6 +141,35 @@ pub(super) fn run_check(firmware: Firmware, flags: &[String]) -> Result<()> {
         let elapsed = stage_start.elapsed().as_millis();
         writeln!(report, "{stage}\t{status}\t{elapsed}\t{log_name}")?;
     }
+    let provenance_start = Instant::now();
+    let provenance = "provenance.tsv";
+    let status = match write_provenance(
+        &directory,
+        firmware,
+        built,
+        hardware,
+        hardware_trace,
+        programmer,
+    ) {
+        Ok(()) => "passed",
+        Err(error) => {
+            writeln!(File::create(directory.join("provenance.log"))?, "{error}")?;
+            if failed_stage.is_none() {
+                failed_stage = Some(("provenance", error));
+            }
+            "failed"
+        }
+    };
+    let log = if status == "passed" {
+        provenance
+    } else {
+        "provenance.log"
+    };
+    writeln!(
+        report,
+        "provenance\t{status}\t{}\t{log}",
+        provenance_start.elapsed().as_millis()
+    )?;
 
     let elapsed = started.elapsed().as_millis();
     if let Some((stage, error)) = failed_stage {
@@ -130,6 +182,112 @@ pub(super) fn run_check(firmware: Firmware, flags: &[String]) -> Result<()> {
     }
     writeln!(report, "result\tpassed\t{elapsed}\t-")?;
     println!("{name} passed");
+    Ok(())
+}
+
+fn write_provenance(
+    directory: &Path,
+    firmware: Firmware,
+    built: bool,
+    hardware: bool,
+    hardware_trace: bool,
+    programmer: Programmer,
+) -> Result<()> {
+    let mut file = File::create(directory.join("provenance.tsv"))?;
+    writeln!(file, "kind\tname\tvalue")?;
+    let revision = read_stdout(Command::new("git").args(["rev-parse", "HEAD"]))?;
+    let status = read_stdout(Command::new("git").args(["status", "--porcelain", "-uno"]))?;
+    writeln!(file, "source\tcommit\t{}", revision.trim())?;
+    writeln!(
+        file,
+        "source\ttracked_changes\t{}",
+        !status.trim().is_empty()
+    )?;
+
+    if built {
+        record_hash(&mut file, "firmware", &firmware.artifact("elf"))?;
+    }
+    for stage in ["trace", "hardware-trace"] {
+        let path = directory.join(stage).join("hello.elf");
+        if path.is_file() {
+            record_hash(&mut file, stage, &path)?;
+        }
+    }
+
+    let mut programs = vec![
+        ("renode", "RENODE", "renode", "--version"),
+        (
+            "arm-none-eabi-gcc",
+            "STM32_GCC",
+            "arm-none-eabi-gcc",
+            "--version",
+        ),
+    ];
+    match firmware {
+        Firmware::Rust => programs.extend([
+            ("cargo", "CARGO", "cargo", "--version"),
+            ("rustc", "RUSTC", "rustc", "--version"),
+        ]),
+        Firmware::Arduino => {
+            programs.push(("arduino-cli", "ARDUINO_CLI", "arduino-cli", "version"))
+        }
+        Firmware::Swift => programs.push(("swiftc", "SWIFTC", "swiftc", "--version")),
+        Firmware::Zig => programs.push(("zig", "ZIG", "zig", "version")),
+        _ if firmware.name().starts_with("pio-") => {
+            programs.push(("platformio", "PLATFORMIO", "pio", "--version"));
+        }
+        _ => {}
+    }
+    if hardware {
+        programs.extend([
+            ("gdb", "GDB", "gdb-multiarch", "--version"),
+            ("openocd", "OPENOCD", "openocd", "--version"),
+        ]);
+        if matches!(programmer, Programmer::Cube) {
+            programs.push((
+                "cubeprogrammer",
+                "CUBE_PROG",
+                "STM32_Programmer_CLI",
+                "--version",
+            ));
+        }
+    }
+    if hardware_trace || hardware && matches!(programmer, Programmer::ProbeRs) {
+        programs.push(("probe-rs", "PROBE_RS", "probe-rs", "--version"));
+    }
+    for (name, variable, fallback, arg) in programs {
+        let output = Command::new("timeout")
+            .args(["--kill-after=1s", "5s"])
+            .arg(tool(variable, fallback))
+            .arg(arg)
+            .output();
+        let version = output
+            .ok()
+            .filter(|result| result.status.success())
+            .and_then(|result| {
+                [result.stdout, result.stderr]
+                    .iter()
+                    .flat_map(|stream| stream.split(|byte| matches!(byte, b'\r' | b'\n')))
+                    .map(String::from_utf8_lossy)
+                    .find(|line| line.bytes().any(|byte| byte.is_ascii_digit()))
+                    .map(|line| line.trim().replace('\t', " "))
+            });
+        writeln!(
+            file,
+            "tool\t{name}\t{}",
+            version.as_deref().unwrap_or("unavailable")
+        )?;
+    }
+    Ok(())
+}
+
+fn record_hash(file: &mut File, name: &str, path: &Path) -> Result<()> {
+    let output = read_stdout(Command::new("sha256sum").arg("--").arg(path))?;
+    let hash = output
+        .split_whitespace()
+        .next()
+        .ok_or("empty sha256sum output")?;
+    writeln!(file, "elf_sha256\t{name}\t{hash}")?;
     Ok(())
 }
 

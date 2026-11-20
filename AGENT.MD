@@ -119,7 +119,32 @@ At a fault, decode SHCSR, CFSR, HFSR, MMFAR and BFAR with RM0385 and PM0253. Sav
 
 For a source-level regression, keep a known-good ELF and binary, reduce the difference to one clock or peripheral, and compare equivalent instructions, register values and virtual time in Renode before repeating SWD tests. Include the ELF hash, exact compiler and SDK revision, simulator model, probe backend, flash report, and first failing observation in the notes. Use [the verified Renode recipes](docs/renode.md) for exact output, GPIO timing, instruction traces, and GDB.
 
-Use `"$cli" check stm32cube --trace` for HAL heartbeat timing and `"$cli" check freertos --trace` for scheduler and queue timing. Both compile a trace variant, recover its bounded snapshot from Renode SRAM, and leave the raw capture, asserted JSON Lines, and `uni.perfetto-trace` in the report's `trace/` directory. Set `TONBAND_ROOT` to use another recorder revision. Set `TBAND_CLI` to provide a matching prebuilt converter. The default is the workspace Tonbandgeraet checkout and its staged converter. [Trace setup and theory](docs/research.md#tonbandgeraet-timing-traces)
+## Timing captures and USART6 console
+
+```bash
+source tools/bench-env.sh
+make cli
+cli=build/cli/debug/uni-cli
+"$cli" check stm32cube --trace
+"$cli" check freertos --trace
+"$cli" check freertos-console --trace
+```
+
+Each `--trace` run builds an instrumented ELF and recovers a bounded snapshot from Renode SRAM. Open the stage's `uni.perfetto-trace` for a timeline and use `events.jsonl` for exact event inspection. The stage keeps the ELF and map, `sram.bin` (including the capture length), `trace.bin` (the converter payload), `run.resc`, and converter metadata. `TONBAND_ROOT` selects a recorder checkout and `TBAND_CLI` can select a converter built from the same revision. The workspace defaults use the Windows checkout and staged WSL converter. [Trace setup and recorder format](docs/research.md#tonbandgeraet-timing-traces)
+
+```bash
+"$cli" check stm32cube --trace --hardware-trace
+"$cli" check freertos --trace --hardware-trace
+"$cli" check rust --hardware --programmer probe-rs
+```
+
+`--hardware-trace` claims the shared `.cache/probe.lock`, checks MCU ID and flash capacity, programs and verifies the trace ELF with Windows probe-rs, then resets. It finds `uni_trace_capture` in the ELF, polls its length word, and reads the finished frame stream via SWD. It also checks CFSR and HFSR. Find the same timing artifacts under `hardware-trace/`. Close any manually started GDB server before running it. To collect only an SRAM snapshot from a previously built, self-finishing trace ELF, use `"$cli" capture-trace --hardware <elf> <directory>`. Append `--hardware` to run the regular firmware's SWD verification after the physical trace. The last command above restores the Rust greeting.
+
+`freertos-console` uses PC6 TX and PC7 RX in AF8 at 115200 baud, 8N1. Connect a 3.3 V USB-UART adapter with common ground and crossed TX/RX when testing the physical input. Wait for `READY 115200 8N1` and send LF- or CRLF-terminated lines. The USART6 IRQ passes complete lines to a four-entry FreeRTOS queue. The task processes `ping`, `led on`, `led off`, and `status`. Status reports PD7, discarded lines from a full queue, and USART receive error observations. Lines accept at most 23 printable ASCII bytes. The traced variant also accepts `trace` to finalize the snapshot.
+
+Run `"$cli" check freertos-console --trace --hardware` for the full Renode input suite and the physical boot check of the regular ELF. Renode exercises split input, LF and CRLF, malformed lines, unknown commands, PD7, a ten-line burst, and recovery. The trace pairs ISR enqueue and task dequeue markers against the 1 MHz TIM2 clock and saves `trace/latency.tsv`. The board debugger checks reset and source stepping, pin mode, baud divisor, RX interrupt enable, the ready banner byte count, and fault state. Physical trace automation currently covers the self-finishing STM32Cube and FreeRTOS greeting images. [Bench observations](docs/verification.md#automated-swd-traces-and-usart6-console)
+
+Review `report.tsv` for stage results and `provenance.tsv` for the Git commit, tracked changes, firmware and trace ELF hashes, and tool versions. The GitHub workflow installs pinned SDK and simulator inputs, then runs the Rust, STM32Cube, FreeRTOS, and console checks on Ubuntu. The test step builds Cargo packages from the local cache, uses local Renode models, and uploads the reports. The WSL hardware commands remain explicit bench runs. [Firmware simulation workflow](.github/workflows/firmware.yml)
 
 ## Arduino CLI upload and debugger
 
@@ -201,6 +226,7 @@ The native HEX, BIN, ASM, LST, DBG and compiler log are in `build/mikroc/`. The 
 | NECTO / mikroSDK | `examples/necto/`, `make necto necto-windows` | Flash, SWD, Renode and Windows compiler equivalence |
 | Classic mikroC | `examples/mikroc/`, `make mikroc` and `make mikroc-source-check` | Matching IDE and headless native images, flash readback, SWD source stepping, Renode UART and GPIO, independent GCC/CMSIS check |
 | FreeRTOS | `examples/frameworks/freertos/`, `make freertos` | Flash, SWD, Renode |
+| FreeRTOS USART6 console | `examples/frameworks/freertos-console/`, `make freertos-console` | Flash and SWD boot, Renode command and timing tests |
 | Eclipse ThreadX | `examples/frameworks/threadx/`, `make threadx` | Flash, SWD, Renode |
 | libopencm3 | `examples/frameworks/libopencm3/`, `make libopencm3` | Flash, SWD, Renode |
 | Zephyr | `examples/frameworks/zephyr/`, `make zephyr` | Flash, SWD, Renode UART and GPIO |

@@ -18,8 +18,9 @@ def extract(directory, language):
     require(0 < length <= len(snapshot) - 4, f"invalid snapshot byte count {length}")
     trace = snapshot[4:4 + length]
     require(trace[-1] == 0, "snapshot ends inside a trace frame")
-    expected = f"Hello, UNI Clicker from {language}!\r\n".encode()
-    require((directory / "uart.txt").read_bytes() == expected * 2, "USART6 greeting changed")
+    if language:
+        expected = f"Hello, UNI Clicker from {language}!\r\n".encode()
+        require((directory / "uart.txt").read_bytes() == expected * 2, "USART6 greeting changed")
     (directory / "trace.bin").write_bytes(trace)
 
 
@@ -30,20 +31,54 @@ def timeline(events, category):
                 yield name, record["ts"], fields
 
 
-def verify(directory, mode):
+def verify_console(directory, base, events):
+    rtos = list(timeline(events, "FreeRTOS"))
+    metadata = [frame["FreeRTOSMetadata"] for frame in events if "FreeRTOSMetadata" in frame]
+    queues = {item["QueueName"]["queue_id"] for item in metadata
+              if "QueueName" in item and item["QueueName"]["name"] == "USART6 RX"}
+    require(len(queues) == 1, f"expected one USART6 RX queue, got {queues}")
+    queue, = queues
+    send = "QueueSendFromIsr"
+    receive = "QueueReceive"
+    transactions = [(kind, fields["len_after"]) for kind, _, fields in rtos
+                    if kind in (send, receive) and fields["queue_id"] == queue]
+    normal = [(send, 1), (receive, 0)]
+    burst = [(send, depth) for depth in range(1, 5)] + [(receive, depth) for depth in range(3, -1, -1)]
+    require(transactions == normal * 9 + burst + normal * 3, f"unexpected queue events {transactions}")
+    sequence = [*range(1, 14), 20, 21, 22]
+    markers = [[(fields["val"], ts) for kind, ts, fields in base
+                if kind == "Valmarker" and fields["valmarker_id"] == marker] for marker in (0, 1)]
+    require(all([index for index, _ in pairs] == sequence for pairs in markers),
+            "USART6 enqueue and dequeue sequences differ")
+    rows = ["sequence\tenqueue_us\tdequeue_us\tlatency_us"]
+    maximum = 0
+    for (index, enqueued), (_, dequeued) in zip(*markers):
+        latency = dequeued - enqueued
+        budget = 1500 if 10 <= index <= 13 else 500
+        require(0 < latency <= budget, f"command {index} latency {latency} us outside 1–{budget} us")
+        rows.append(f"{index}\t{enqueued}\t{dequeued}\t{latency}")
+        maximum = max(maximum, latency)
+    (directory / "latency.tsv").write_text("\n".join(rows) + "\n")
+    print(f"Verified {len(sequence)} IRQ-to-task deliveries in Renode. Maximum latency {maximum} us.")
+
+
+def verify(directory, profile):
     events = [json.loads(line) for line in (directory / "events.jsonl").read_text().splitlines()]
     resolutions = [
         event["BaseMetadata"]["TsResolutionNs"]["ns_per_ts"]
         for event in events if "TsResolutionNs" in event.get("BaseMetadata", {})
     ]
-    require(resolutions == [1_000_000], f"unexpected timestamp units {resolutions}")
+    console = profile == "freertos-console"
+    require(resolutions == [1_000 if console else 1_000_000], f"unexpected timestamp units {resolutions}")
     base = list(timeline(events, "Base"))
     require(all(fields["cnt"] == 0 for name, _, fields in base if name == "DroppedEvtCnt"),
             "trace reports dropped events")
+    if console:
+        return verify_console(directory, base, events)
     heartbeats = [(ts, fields["val"]) for kind, ts, fields in base
                   if kind == "Valmarker" and fields["valmarker_id"] == 0]
     require([value for _, value in heartbeats] == [1, 2], f"unexpected heartbeat trace {heartbeats}")
-    if mode == "bare-metal":
+    if profile == "stm32cube":
         intervals = [(kind, ts) for kind, ts, fields in base
                      if kind in ("EvtmarkerBegin", "EvtmarkerEnd") and fields["evtmarker_id"] == 0]
         require([kind for kind, _ in intervals] == ["EvtmarkerBegin", "EvtmarkerEnd"] * 2,

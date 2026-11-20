@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.19)
 project(uni_clicker_rtos LANGUAGES C ASM)
 
-set(FRAMEWORK "" CACHE STRING "freertos or threadx")
+set(FRAMEWORK "" CACHE STRING "freertos, freertos-console or threadx")
 set(KERNEL_DIR "" CACHE PATH "Upstream kernel source directory")
 set(STM32CUBE_F7 "" CACHE PATH "STM32CubeF7 root")
 set(TONBAND_ROOT "" CACHE PATH "Tonbandgeraet sources for the FreeRTOS trace build")
@@ -23,13 +23,16 @@ target_compile_options(hello PRIVATE ${cpu} -Og -g3 -ffunction-sections -fdata-s
 target_link_options(hello PRIVATE ${cpu} -nostartfiles --specs=nano.specs --specs=nosys.specs
     "-T${shared}/stm32f746.ld" "-Wl,--gc-sections,-z,noexecstack,-Map,hello.map")
 
-if(FRAMEWORK STREQUAL "freertos")
+if(FRAMEWORK STREQUAL "freertos" OR FRAMEWORK STREQUAL "freertos-console")
     set(port "${KERNEL_DIR}/portable/GCC/ARM_CM7/r0p1")
-    target_sources(hello PRIVATE freertos/main.c "${KERNEL_DIR}/tasks.c"
+    target_sources(hello PRIVATE "${FRAMEWORK}/main.c" "${KERNEL_DIR}/tasks.c"
         "${KERNEL_DIR}/list.c" "${KERNEL_DIR}/queue.c" "${port}/port.c")
     target_include_directories(hello PRIVATE freertos "${KERNEL_DIR}/include" "${port}")
     if(TONBAND_ROOT)
         target_compile_definitions(hello PRIVATE UNI_TBAND_TRACE UNI_TBAND_FREERTOS)
+        if(FRAMEWORK STREQUAL "freertos-console")
+            target_compile_definitions(hello PRIVATE UNI_TBAND_MICROSECOND_CLOCK)
+        endif()
         target_include_directories(hello PRIVATE ../trace "${TONBAND_ROOT}/tband/inc")
         target_sources(hello PRIVATE ../trace/uni_trace.c
             "${TONBAND_ROOT}/tband/src/tband.c"
@@ -43,5 +46,5 @@ elseif(FRAMEWORK STREQUAL "threadx")
     target_include_directories(hello PRIVATE "${KERNEL_DIR}/common/inc" "${port}/inc")
     target_compile_definitions(hello PRIVATE TX_TIMER_TICKS_PER_SECOND=1000)
 else()
-    message(FATAL_ERROR "Set FRAMEWORK to freertos or threadx")
+    message(FATAL_ERROR "Set FRAMEWORK to freertos, freertos-console or threadx")
 endif()

@@ -33,7 +33,7 @@ LINK = -Tfirmware/stm32f746.ld -Wl,--gc-sections,-z,noexecstack,-Map,$(@:.elf=.m
 export TMPDIR ?= $(CURDIR)/.cache/tmp
 
 .PHONY: all stm32cube arduino rust swift zig necto necto-windows mikroc mikroc-source-check freertos threadx libopencm3 riot chibios zephyr nuttx micropython mbed-os nanoframework nanoframework-native platformio $(PIO_TARGETS) cli deps-stm32cube check-sdk check-microzig
-.PHONY: tband-stm32cube
+.PHONY: tband-stm32cube freertos-console
 all: stm32cube arduino rust swift cli
 stm32cube: build/stm32cube/hello.bin build/stm32cube/hello.hex
 arduino: $(ARDUINO_TARGET).bin $(ARDUINO_TARGET).hex
@@ -43,6 +43,7 @@ zig: build/zig/hello.bin build/zig/hello.hex
 necto: build/necto/hello.bin build/necto/hello.hex
 necto-windows: build/necto-windows/hello.bin build/necto-windows/hello.hex
 freertos: build/freertos/hello.bin build/freertos/hello.hex
+freertos-console: build/freertos-console/hello.bin build/freertos-console/hello.hex
 threadx: build/threadx/hello.bin build/threadx/hello.hex
 libopencm3: build/libopencm3/hello.bin build/libopencm3/hello.hex
 riot: | .cache/tmp
@@ -140,9 +141,11 @@ build/necto-windows/hello.elf: build/necto/hello.elf tools/build-necto-windows.s
 
 build/freertos/hello.elf: examples/frameworks/freertos/main.c examples/frameworks/freertos/FreeRTOSConfig.h
 build/freertos/hello.elf: KERNEL_DIR = $(FREERTOS_ROOT)
+build/freertos-console/hello.elf: examples/frameworks/freertos-console/main.c examples/frameworks/freertos/FreeRTOSConfig.h
+build/freertos-console/hello.elf: KERNEL_DIR = $(FREERTOS_ROOT)
 build/threadx/hello.elf: examples/frameworks/threadx/main.c examples/frameworks/threadx/platform.c
 build/threadx/hello.elf: KERNEL_DIR = $(THREADX_ROOT)
-build/freertos/hello.elf build/threadx/hello.elf: examples/frameworks/CMakeLists.txt examples/frameworks/common/board.c examples/frameworks/common/board.h examples/necto/arm-gcc.cmake firmware/stm32f746.ld firmware/startup_support.c | check-sdk .cache/tmp
+build/freertos/hello.elf build/freertos-console/hello.elf build/threadx/hello.elf: examples/frameworks/CMakeLists.txt examples/frameworks/common/board.c examples/frameworks/common/board.h examples/necto/arm-gcc.cmake firmware/stm32f746.ld firmware/startup_support.c | check-sdk .cache/tmp
 	cmake -S examples/frameworks -B "$(@D)" -G Ninja -DCMAKE_TOOLCHAIN_FILE="$(CURDIR)/examples/necto/arm-gcc.cmake" -DSTM32CUBE_F7="$(STM32CUBE_F7)" -DFRAMEWORK="$(notdir $(@D))" -DKERNEL_DIR="$(KERNEL_DIR)"
 	cmake --build "$(@D)" --parallel 4
 

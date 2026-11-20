@@ -2,8 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source tools/bench-env.sh
-if [[ $# != 2 || ! "$1" =~ ^(stm32cube|freertos)$ ]]; then
-    echo 'Usage: tools/check-tonbandgeraet.sh <stm32cube|freertos> <output-dir>' >&2
+if [[ $# -lt 2 || $# -gt 3 || ! "$1" =~ ^(stm32cube|freertos|freertos-console)$ || ( $# == 3 && ( "$3" != --hardware || "$1" == freertos-console ) ) ]]; then
+    echo 'Usage: tools/check-tonbandgeraet.sh <stm32cube|freertos|freertos-console> <output-dir> [--hardware for stm32cube or freertos]' >&2
     exit 2
 fi
 profile=$1
@@ -28,6 +28,10 @@ else
         -p tband-cli --no-default-features
     cli="$target/debug/tband-cli"
 fi
+"$cli" --version >"$out/converter-version.txt"
+if revision=$(git -C "$tonband" rev-parse --verify HEAD 2>/dev/null); then
+    printf '%s\n' "$revision" >"$out/recorder-revision.txt"
+fi
 
 sdk="${STM32CUBE_F7:-$PWD/.cache/vendor/STM32CubeF7}"
 case "$profile" in
@@ -36,11 +40,11 @@ case "$profile" in
         mode=bare-metal
         greeting=STM32Cube
         ;;
-    freertos)
+    freertos|freertos-console)
         {
             cmake -S examples/frameworks -B "$out" -G Ninja \
                 -DCMAKE_TOOLCHAIN_FILE="$PWD/examples/necto/arm-gcc.cmake" \
-                -DSTM32CUBE_F7="$sdk" -DFRAMEWORK=freertos -DKERNEL_DIR="$FREERTOS_ROOT" \
+                -DSTM32CUBE_F7="$sdk" -DFRAMEWORK="$profile" -DKERNEL_DIR="$FREERTOS_ROOT" \
                 -DTONBAND_ROOT="$tonband"
             cmake --build "$out"
         } >"$out/build.log" 2>&1
@@ -50,8 +54,15 @@ case "$profile" in
 esac
 
 elf="$out/hello.elf"
-read -r address size < <(arm-none-eabi-nm -S "$elf" | awk '$4 == "uni_trace_capture" {print "0x" $1, "0x" $2}')
-cat > "$out/run.resc" <<SCRIPT
+if [[ ${3:-} == --hardware ]]; then
+    "${UNI_TRACE_CLI:-build/cli/debug/uni-cli}" capture-trace --hardware "$elf" "$out"
+    greeting=
+elif [[ "$profile" == freertos-console ]]; then
+    python3 tools/simulate-console.py "$elf" "$out" --trace
+    greeting=
+else
+    read -r address size < <(arm-none-eabi-nm -S "$elf" | awk '$4 == "uni_trace_capture" {print "0x" $1, "0x" $2}')
+    cat > "$out/run.resc" <<SCRIPT
 mach create "uni-tband"
 machine LoadPlatformDescription "$PWD/sim/uni-clicker.repl"
 sysbus LoadELF "$elf"
@@ -63,13 +74,14 @@ sysbus ReadDoubleWord 0xE000ED28
 sysbus ReadDoubleWord 0xE000ED2C
 quit
 SCRIPT
-timeout --kill-after=2s 40s "$RENODE" --console --disable-gui --plain --config "$out/renode.config" \
-    "$out/run.resc" </dev/null >"$out/renode.log" 2>&1
-mapfile -t faults < <(tr -d '\r' < "$out/renode.log" | sed -n 's/^\(0x[0-9A-Fa-f]\{8\}\)$/\1/p')
-[[ "${faults[*]}" == "0x00000000 0x00000000" ]] || { echo "Unexpected fault status. See $out/renode.log"; exit 1; }
+    timeout --kill-after=2s 40s "$RENODE" --console --disable-gui --plain --config "$out/renode.config" \
+        "$out/run.resc" </dev/null >"$out/renode.log" 2>&1
+    mapfile -t faults < <(tr -d '\r' < "$out/renode.log" | sed -n 's/^\(0x[0-9A-Fa-f]\{8\}\)$/\1/p')
+    [[ "${faults[*]}" == "0x00000000 0x00000000" ]] || { echo "Unexpected fault status. See $out/renode.log"; exit 1; }
+fi
 python3 tools/check-tonbandgeraet.py extract "$out" "$greeting"
 "$cli" --Werror dump --mode "$mode" "$out/trace.bin" >"$out/events.jsonl" 2>"$out/decode.log"
-python3 tools/check-tonbandgeraet.py verify "$out" "$mode"
+python3 tools/check-tonbandgeraet.py verify "$out" "$profile"
 "$cli" --Werror conv --mode "$mode" --output "$out/uni.perfetto-trace" "$out/trace.bin" >"$out/conversion.log" 2>&1
 test -s "$out/uni.perfetto-trace"
 printf 'Timing artifacts %s\n' "$out"

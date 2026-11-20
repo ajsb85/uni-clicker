@@ -130,3 +130,19 @@ WSL `rust-gdb` with `gdb-multiarch` connected to the Windows probe-rs GDB server
 The STM32Cube and FreeRTOS `--trace` checks passed in Renode. Native probe-rs also flashed both trace ELFs and recovered their SRAM snapshots from the physical board. The physical captures passed the same timing assertions with clear CFSR and HFSR. STM32Cube recorded two 501 ms waits. FreeRTOS recorded its sender and receiver task switches and two queue deliveries 500 ms apart. Both physical Perfetto traces are under `.cache/verification/tband-hardware.VIxVrw/`. After capture, the normal Rust greeting was flashed and verified again.
 
 Windows continued to enumerate ST-LINK and the mikroC dongle. The CODEGRIP USB scan completed with an empty device list. [Probe checks](mikroe.md#headless-probe-checks)
+
+## Automated SWD traces and USART6 console
+
+`uni-cli check stm32cube --trace --hardware-trace` and `uni-cli check freertos --trace --hardware-trace` passed with Windows probe-rs 0.32.0 and the ST-LINK in SWD mode. The CLI recovered 94 and 359 trace bytes from SRAM, respectively. Both hardware recordings passed the same assertions as the Renode runs and reported clear CFSR and HFSR. An occupied-lock test returned the probe-busy error before flashing or creating a snapshot.
+
+`uni-cli check freertos-console --trace --hardware` passed the Renode protocol suite and the hardware boot check. OpenOCD and GDB matched the vectors, stepped into the application, and stopped at the ready-state watchpoint. USART6 had BRR `0x8b`, PC6 and PC7 in AF8, RX IRQ enabled, 17 ready-banner bytes transmitted, and clear fault registers. An external UART adapter is required to repeat the command input suite on the board.
+
+| Renode scenario | Observed result |
+| --- | --- |
+| Fragmented `ping`, CRLF and LF, LED commands | Exact responses and PD7 high then low |
+| Embedded CR, NUL, overlong and empty lines | Four `ERR malformed` responses |
+| Unknown command and subsequent valid input | `ERR unknown` and successful recovery |
+| Ten commands queued in one burst | Four replies, six discarded lines and successful recovery |
+| Tonbandgeraet ISR-to-task measurements | 16 matched enqueue and dequeue sequences with zero dropped trace events |
+
+The Renode TIM2 trace measured 81–82 µs for isolated commands and 388–402 µs for the burst. The assertions allow up to 500 µs and 1,500 µs, respectively. These values measure the virtual interval from successful ISR enqueue to task dequeue. The report includes `trace/latency.tsv`, the exact USART6 transcript, the injected scenario, raw and decoded traces, and `provenance.tsv` with firmware hashes and tool versions. [Reproduce the checks](../AGENT.MD#timing-captures-and-usart6-console)

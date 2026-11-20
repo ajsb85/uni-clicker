@@ -1,6 +1,9 @@
 #include "uni_trace.h"
 
-volatile uint64_t uni_trace_ticks;
+#ifdef UNI_TBAND_MICROSECOND_CLOCK
+#include "stm32f7xx.h"
+#endif
+
 volatile struct {
     uint32_t length;
     uint8_t data[tband_configMETADATA_BUF_SIZE + tband_configBACKEND_SNAPSHOT_BUF_SIZE];
@@ -13,15 +16,43 @@ void uni_trace_start(void)
     }
 }
 
+#ifdef UNI_TBAND_MICROSECOND_CLOCK
+void uni_trace_clock_init(void)
+{
+    RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
+    (void)RCC->APB1ENR;
+    TIM2->PSC = 15; // The bench uses 16 MHz HSI with APB1 undivided.
+    TIM2->ARR = UINT32_MAX;
+    TIM2->EGR = TIM_EGR_UG;
+    TIM2->SR = 0;
+    TIM2->CR1 = TIM_CR1_CEN;
+}
+
+uint64_t uni_trace_timestamp(void)
+{
+    // The tband port holds PRIMASK while observing the 32-bit timer.
+    static uint64_t rollover;
+    static uint32_t previous;
+    const uint32_t current = TIM2->CNT;
+    if (current < previous) {
+        rollover += UINT64_C(1) << 32;
+    }
+    previous = current;
+    return rollover + current;
+}
+#else
+volatile uint64_t uni_trace_ticks;
+
 void uni_trace_tick(void)
 {
     ++uni_trace_ticks;
 }
+#endif
 
-void uni_trace_stop(void)
+bool uni_trace_stop(void)
 {
     if (tband_stop_snapshot() != 0 || !tband_tracing_finished()) {
-        return;
+        return false;
     }
 
     const volatile uint8_t *metadata = tband_get_metadata_buf(0);
@@ -35,4 +66,5 @@ void uni_trace_stop(void)
         uni_trace_capture.data[metadata_length + i] = events[i];
     }
     uni_trace_capture.length = metadata_length + events_length;
+    return true;
 }

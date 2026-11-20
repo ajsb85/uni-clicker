@@ -20,6 +20,7 @@ case "${1:-}" in
     necto|necto-windows) language=NECTO; artifact=hello.elf ;;
     mikroc|mikroc-source-check) language=mikroC; artifact=hello.elf ;;
     freertos) language=FreeRTOS; artifact=hello.elf ;;
+    freertos-console) artifact=hello.elf ;;
     threadx) language=ThreadX; artifact=hello.elf ;;
     libopencm3) language=libopencm3; artifact=hello.elf ;;
     riot) language=RIOT; artifact=hello.elf ;;
@@ -38,6 +39,10 @@ case "$mode" in
     *) usage ;;
 esac
 [[ $# -le 2 ]] || usage
+if [[ "$1" == freertos-console && "$mode" == gpio ]]; then
+    echo 'The console smoke test checks PD7 while sending USART6 commands.' >&2
+    exit 2
+fi
 if [[ "$1" == nuttx && "$mode" == gpio ]]; then
     echo 'The NuttX example prints once during startup.' >&2
     exit 2
@@ -51,6 +56,9 @@ fi
 export TMPDIR="$PWD/.cache/tmp"
 mkdir -p "$TMPDIR" .cache/sim
 run=$(mktemp -d "$PWD/.cache/sim/$1.$mode.XXXXXX")
+if [[ "$1" == freertos-console && "$mode" == smoke ]]; then
+    exec python3 tools/simulate-console.py "$binary" "$run"
+fi
 cat > "$run/run.resc" <<SCRIPT
 mach create "uni-clicker"
 machine LoadPlatformDescription "$PWD/sim/$platform"

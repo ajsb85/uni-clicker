@@ -10,7 +10,7 @@ Hello World firmware and framework ports for the Mikroe UNI Clicker with the SiB
 | `swift` | Embedded Swift, GNU Arm Embedded linker, ST CMSIS startup | [Swift example](examples/swift/Hello.swift) |
 | `zig` | Zig and MicroZig STM32F746ZG port | [Zig example](examples/zig/) |
 | `necto`, `necto-windows` | Installed mikroSDK and Arm GCC | [NECTO example](examples/necto/) |
-| `freertos`, `threadx`, `libopencm3` | Upstream Cortex-M7 kernels and peripheral library | [Framework projects](examples/frameworks/) |
+| `freertos`, `freertos-console`, `threadx`, `libopencm3` | Cortex-M7 kernels, an interrupt-driven USART6 console, and a peripheral library | [Framework projects](examples/frameworks/) |
 | `zephyr`, `riot`, `chibios`, `mbed-os`, `nuttx`, `micropython` | SDK and interpreter builds for the UNI Clicker | [Framework targets](docs/frameworks.md) |
 | `nanoframework`, `nanoframework-native` | Windows .NET SDK, nanoBooter and nanoCLR | [Managed and native .NET builds](docs/frameworks.md#net-nanoframework) |
 | `mikroc`, `mikroc-source-check` | Classic mikroC PRO for ARM and an independent GCC/CMSIS build | [mikroC example](examples/mikroc/) |
@@ -40,16 +40,20 @@ make cli
 build/cli/debug/uni-cli check stm32cube
 ```
 
-The command builds the profile, inspects its firmware image and runs the Renode smoke test. It prints the path to a `report.tsv` file under `.cache/verification/check.*` with each stage's status, elapsed time and log filename. A failed stage sets a nonzero exit status and marks the remaining stages skipped. See `uni-cli help` for the supported profiles.
+The command builds the profile, inspects its firmware image and runs the Renode smoke test. It prints the path to `report.tsv` under `.cache/verification/check.*` with each stage's status, elapsed time and log filename. A failed stage sets a nonzero exit status and skips the remaining tests. The adjacent `provenance.tsv` records the Git commit, tracked changes, ELF SHA-256 digests and tool versions. See `uni-cli help` for the supported profiles.
 
 Add `--hardware` to flash the connected STM32F746ZG via ST-LINK after the simulation passes. This option writes the selected firmware and starts the OpenOCD and GDB verification. The run directory includes the programmer, server and debugger logs.
 
 - `uni-cli check rust --hardware --programmer probe-rs` selects native probe-rs programming with readback and the standard OpenOCD debugger check.
 - `uni-cli check stm32cube --trace` and `uni-cli check freertos --trace` add Tonbandgeraet timing assertions and save a Perfetto artifact.
+- `uni-cli check stm32cube --hardware-trace` and `uni-cli check freertos --hardware-trace` program the trace ELF through probe-rs, then recover and validate the SRAM recording over SWD. The artifacts are in the report's `hardware-trace/` directory.
+- `uni-cli check freertos-console --trace` tests USART6 commands, malformed input and queue saturation in Renode. It saves per-command IRQ-to-task measurements in `trace/latency.tsv`.
 - `uni-cli test rust --hardware` runs the separate embedded-test ELF and captures RTT messages.
 - `uni-cli check nuttx --hardware` and `uni-cli check micropython --hardware` use runtime-specific debugger checks. MicroPython flashes the split Intel HEX.
 
-When both `--trace` and `--hardware` are set, the trace stage verifies the instrumented build in Renode and the hardware stage programs the regular firmware.
+Combine `--trace`, `--hardware-trace` and `--hardware` on STM32Cube or FreeRTOS to check the instrumented image in Renode and on the board, then program and verify the regular firmware. [Capture procedure and console commands](AGENT.MD#timing-captures-and-usart6-console)
+
+GitHub Actions runs the Rust greeting and the three Tonbandgeraet checks in Renode. It uploads the verification reports and simulation artifacts. [Firmware simulation workflow](.github/workflows/firmware.yml)
 
 ## Flash and debug
 

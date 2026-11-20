@@ -3,9 +3,15 @@
 
 #include "stm32f7xx.h"
 
+#ifdef UNI_TBAND_MICROSECOND_CLOCK
+uint64_t uni_trace_timestamp(void);
+#define tband_portTIMESTAMP() uni_trace_timestamp()
+#define tband_portTIMESTAMP_RESOLUTION_NS 1000ULL
+#else
 extern volatile uint64_t uni_trace_ticks;
 #define tband_portTIMESTAMP() (uni_trace_ticks)
 #define tband_portTIMESTAMP_RESOLUTION_NS 1000000ULL
+#endif
 #define tband_portNUMBER_OF_CORES 1
 #define tband_portGET_CORE_ID() 0
 #define tband_portENTER_CRITICAL_FROM_ANY() \
