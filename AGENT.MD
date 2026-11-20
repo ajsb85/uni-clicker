@@ -14,6 +14,8 @@ cli=build/cli/debug/uni-cli
 
 The repository is [ajsb85/uni-clicker](https://github.com/ajsb85/uni-clicker). The mounted resource tree is `/mnt/c/Users/gbast/dev/uni-clicker` in WSL and `C:\Users\gbast\dev\uni-clicker` in Windows. The environment script accepts `UNI_WINDOWS_ROOT` and individual tool overrides. Check its exports and the installed paths before provisioning or searching for another copy.
 
+For a Renode session, use the first-run checklist, local source map, and model extension workflow. [Renode handoff](docs/renode.md)
+
 Keep source and ordinary builds on the WSL filesystem. Keep capture files, SDK references, package caches, and scratch directories under `.cache/`. The large Windows-backed caches live under `$UNI_WINDOWS_ROOT/.uni-clicker-lab-cache`. Leave `/tmp` out of any command that needs to survive a session. Check `df -h . "$UNI_WINDOWS_ROOT"` before adding a new SDK or interpreter tree.
 
 The WSL root filesystem ran out of allocatable space during the framework builds. A persistent ext4 image in the Windows workspace supplies Linux build storage at `.cache/sdk-native`. It holds extracted SDKs, PlatformIO packages, and build intermediates. The source archives are in the Windows workspace. After a WSL restart, remount the existing image from the project root before sourcing the bench environment in a fresh shell.
@@ -27,7 +29,7 @@ source tools/bench-env.sh
 df -h . .cache/sdk-native
 ```
 
-The STM32CubeF7 and RIOT vendor paths and the MicroPython build path on this bench link into the mounted cache. The STM32CubeF7 checkout moved to `.cache/sdk-native/work/vendor/STM32CubeF7` when WSL root filled again. Builds still resolve it through `.cache/vendor/STM32CubeF7`. The saved Cargo and Zig intermediates are under `frameworks/archived-rust-build` and `frameworks/archived-wsl-builds` in the Windows-backed cache. The Rust and Zig firmware images remain under `build/`.
+The STM32CubeF7 and RIOT vendor paths and the MicroPython build path on this bench link into the mounted cache. The STM32CubeF7 checkout moved to `.cache/sdk-native/work/vendor/STM32CubeF7` when WSL root filled again. Builds still resolve it through `.cache/vendor/STM32CubeF7`. The local `build/systemview-cli` target directory links to `.cache/sdk-native/work/systemview-cli-target`. The saved Cargo and Zig intermediates are under `frameworks/archived-rust-build` and `frameworks/archived-wsl-builds` in the Windows-backed cache. The Rust and Zig firmware images are under `build/`.
 
 ## Locate resources
 

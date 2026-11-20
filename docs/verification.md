@@ -158,3 +158,9 @@ On the physical UNI Clicker, Windows OpenOCD flashed and verified the same ELF w
 The host UART driver passed the split-input, line-ending, malformed-input, burst accounting, and recovery checks against the live Renode USART6. The regular FreeRTOS console also passed its physical SWD boot check. Windows rejected an absent COM port before the hardware trace stage opened the probe.
 
 The separate Arduino USB CDC image built with STM32duino 3.1.0 and passed OpenOCD flash readback. GDB stopped at `setup()` and the ready-state watchpoint, then confirmed PB15 high, PA11/PA12 AF10, the PLL clock configuration, OTG_FS in device mode, and clear CFSR and HFSR. Windows enumerated it as COM4 under `0483:5740`. The host driver checked the USB ping reply, both LED commands and the invalid-command response. Direct SWD reads confirmed PD7 high after `led on` and low after `led off`. [USB wiring and reproduction](usb-cdc.md)
+
+## Renode handoff recheck on 2026-11-20
+
+The WSL runner reported Renode 1.17.0. The Rust smoke check, PD7 high/low/high samples, and 2 ms instruction trace passed. The GDB server on port 3334 stopped at the Rust entry and single-stepped it. The flash vector gave stack `0x20050000` and reset address `0x08000401`. The named `msp` alias displayed zero in the simulator session. See `.cache/verification/renode-handoff-gdb/gdb.log`.
+
+The deterministic and pseudoterminal FreeRTOS console runs each matched 16 ISR enqueue and task dequeue pairs. The deterministic run peaked at 402 µs and the live simulation at 404 µs. SystemView decoded ten events, with three markers 250 ms apart and zero drops. See `.cache/verification/check.freertos-console.1795143690217469621.1087146/` and `.cache/verification/systemview.mvz4Xu/`. The Device USB CDC image remained active during the simulator checks. [Renode handoff](renode.md)

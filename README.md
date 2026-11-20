@@ -57,6 +57,8 @@ Combine `--trace`, `--hardware-trace` and `--hardware` on STM32Cube or FreeRTOS 
 
 GitHub Actions runs the Rust greeting, the three Tonbandgeraet checks, and the SystemView RTT check in Renode. It uploads the verification reports and simulation artifacts. [Firmware simulation workflow](.github/workflows/firmware.yml)
 
+For simulator development, start with the platform map, local upstream examples, and reproducible peripheral checks. [Renode handoff](docs/renode.md)
+
 The `arduino-usb-cdc` example uses the UNI Clicker USB-C connector in device mode for a Windows virtual COM console. [USB-C wiring and verification](docs/usb-cdc.md)
 
 ## Flash and debug
