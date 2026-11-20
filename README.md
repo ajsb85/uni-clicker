@@ -94,4 +94,13 @@ With Renode on PATH, or `RENODE` set to its executable, run `tools/simulate.sh s
 
 Run `build/cli/debug/uni-cli simulate zephyr gpio` for the same simulation command through the Rust CLI. The CLI also accepts the `pio-` profiles and locates their PlatformIO-generated ELFs.
 
+### SDK peripheral tests
+
+Build the original mikroSDK examples for the STM32F746ZG and run them with
+external MikroBUS models. ClickForge generates verified stimulus kits for
+Ambient and Thermo 28 on socket 1. BoardForge runs the kits and records
+ADC or I2C assertions, source coverage, and replay files for failed cases.
+The LAN8651 control probe checks SPI exchanges on the same socket.
+[Build and simulate the SDK examples](docs/renode-clicks.md)
+
 The [Renode guide](docs/renode.md) covers GPIO timing, boot traces, and GDB. The [framework guide](docs/frameworks.md) lists all twelve requested frameworks and runtimes, their integration commands, and verification status. See also the [board research](docs/research.md), [bench results](docs/verification.md), and [agent handoff](AGENT.MD).
