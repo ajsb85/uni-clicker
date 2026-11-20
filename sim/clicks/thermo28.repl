@@ -1,0 +1,4 @@
+using "mikrobus1-i2c.repl"
+
+// Thermo 28 Click with ADDR SEL in the default VSS position.
+thermo28: Sensors.AS6221 @ i2c1 0x48

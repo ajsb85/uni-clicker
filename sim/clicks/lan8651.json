@@ -1,0 +1,27 @@
+{
+  "runs": [
+    {
+      "name": "control",
+      "model": "sim/clicks/LAN8651Control.cs",
+      "platform": "sim/clicks/lan8651.repl",
+      "commands": ["emulation RunFor \"0.10\""],
+      "uart": [
+        "LAN8651 OA=00000011 ID=00086511 protected=00086511",
+        "LAN8651 RESET=00000040/00000000/00000040 IRQ=0/0/1",
+        "LAN8651 FOOTER=0000003E",
+        "LAN8651 PASS"
+      ]
+    },
+    {
+      "name": "unplugged",
+      "platform": "sim/clicks/mikrobus1-spi.repl",
+      "commands": ["emulation RunFor \"0.10\""],
+      "uart": [
+        "LAN8651 OA=00000000 ID=00000000 protected=00000000",
+        "LAN8651 RESET=00000000/00000000/00000000 IRQ=0/0/0",
+        "LAN8651 FOOTER=00000000",
+        "LAN8651 FAIL 2"
+      ]
+    }
+  ]
+}

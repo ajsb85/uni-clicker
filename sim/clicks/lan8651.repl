@@ -1,0 +1,10 @@
+using "mikrobus1-spi.repl"
+
+lan8651: SPI.LAN8651Control @ spi1
+    IRQ -> gpioD@3
+
+gpioA:
+    4 -> lan8651@0
+
+gpioE:
+    11 -> lan8651@1

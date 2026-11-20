@@ -1,0 +1,8 @@
+{
+  "accel21": ["i2c", "spi"],
+  "ambient": ["adc"],
+  "buzz": ["pwm"],
+  "gps": ["uart"],
+  "gyro7": ["spi"],
+  "thermo28": ["i2c"]
+}

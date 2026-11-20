@@ -1,0 +1,86 @@
+name: UNI Clicker peripheral simulation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  catalog:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - id: plan
+        run: |
+          plan="$(python3 tools/check-necto-clicks.py matrix)"
+          printf 'matrix=%s\n' "$plan" >> "$GITHUB_OUTPUT"
+      - name: Inventory the pinned mikroSDK Click corpus
+        run: |
+          tools/prepare-necto-clicks.sh --drivers-only
+          python3 tools/check-necto-clicks.py inventory > click-inventory.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: click-inventory
+          path: click-inventory.json
+
+  simulate:
+    needs: catalog
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.catalog.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi libnewlib-arm-none-eabi libicu74
+      - name: Prepare pinned SDKs and Renode
+        env:
+          RENODE_SHA256: 4ba7c68b59e2447f188ef4b4b112fcccd2802582c460beedceb63b84e5605a5f
+        run: |
+          make deps-stm32cube
+          tools/prepare-necto-clicks.sh
+          cache="$PWD/.cache/click-ci"
+          mkdir -p "$cache/renode"
+          curl --fail --location --retry 3 \
+            https://github.com/renode/renode/releases/download/v1.17.0/renode-1.17.0.linux-portable.tar.gz \
+            --output "$cache/renode.tar.gz"
+          printf '%s  %s\n' "$RENODE_SHA256" "$cache/renode.tar.gz" | sha256sum --check
+          tar -xzf "$cache/renode.tar.gz" -C "$cache/renode"
+          renode=$(find "$cache/renode" -type f -name renode -print -quit)
+          test -x "$renode"
+          printf 'RENODE=%s\nNECTO_SDK_ROOT=%s/.cache/vendor/mikrosdk-v2\n' "$renode" "$PWD" >> "$GITHUB_ENV"
+      - name: Compile the SDK cohort on STM32F746ZG
+        run: |
+          python3 tools/build-click-sdk.py --out build/click-cohort/gcc
+      - name: Run external peripheral cases
+        env:
+          CLICK_SHARD: ${{ matrix.shard }}
+          CLICK_SHARDS: ${{ matrix.shards }}
+        run: |
+          python3 tools/check-necto-clicks.py verify --renode "$RENODE" \
+            --build-index build/click-cohort/gcc/build-index.json \
+            --shard "$CLICK_SHARD" --shards "$CLICK_SHARDS"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: click-simulation-${{ matrix.shard }}
+          include-hidden-files: true
+          path: |
+            .cache/verification/clicks.*/
+            build/click-cohort/gcc/build-index.json
+            build/click-cohort/gcc/*/build.json
+            build/click-cohort/gcc/*/build.log
+            build/click-cohort/gcc/*/example.elf
+            build/click-cohort/gcc/*/example.hex

@@ -8,6 +8,8 @@ use std::process::{Command, ExitCode};
 mod check;
 mod hex_image;
 mod programmer;
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+mod renode_native;
 
 use programmer::Programmer;
 
@@ -27,6 +29,8 @@ const HELP: &str = "uni-cli <command> [firmware] [endpoint]
   debug <firmware> [localhost:3333]         Open an interactive GDB session
   verify <firmware> [localhost:3333]        Check reset and the application in GDB
   simulate <firmware> [smoke|gpio|trace|gdb] Run the firmware in Renode
+  simulate rust embedded                 Run the Rust check through librenode
+  renode-script <resc>                   Run a local script through librenode
   test rust --hardware                    Run the Rust board regression suite
   check <firmware> [--trace] [--hardware-trace] [--hardware [--programmer probe-rs]]
                                           Build, analyze, simulate, and save a report
@@ -550,6 +554,30 @@ fn execute(args: &[String]) -> Result<()> {
         [cmd, name] if cmd == "flash" => Programmer::Cube.flash(Firmware::parse(name)?),
         [cmd, name, option, programmer] if cmd == "flash" && option == "--programmer" => {
             Programmer::parse(programmer)?.flash(Firmware::parse(name)?)
+        }
+        [cmd, name, mode] if cmd == "simulate" && mode == "embedded" => {
+            if !matches!(Firmware::parse(name)?, Firmware::Rust) {
+                return Err("embedded simulation supports the Rust profile".into());
+            }
+            #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+            {
+                renode_native::check_rust(&Firmware::Rust.artifact("elf"))
+            }
+            #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+            {
+                Err("embedded simulation supports Linux x86-64 hosts, including WSL".into())
+            }
+        }
+        [cmd, script] if cmd == "renode-script" => {
+            #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+            {
+                renode_native::run_script(&cwd.join(script))
+            }
+            #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+            {
+                let _ = script;
+                Err("embedded simulation supports Linux x86-64 hosts, including WSL".into())
+            }
         }
         [cmd, name, rest @ ..] if cmd == "simulate" && rest.len() <= 1 => {
             let firmware = Firmware::parse(name)?;

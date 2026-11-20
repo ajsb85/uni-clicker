@@ -1,0 +1,27 @@
+{
+  "driver": "thermo28",
+  "runs": [
+    {
+      "name": "samples",
+      "platform": "sim/clicks/thermo28.repl",
+      "commands": [
+        "sysbus.i2c1.thermo28 Temperature 22.50",
+        "emulation RunFor \"0.4\"",
+        "sysbus.i2c1.thermo28 Temperature -5.25",
+        "emulation RunFor \"1.1\""
+      ],
+      "uart": [
+        "Application Init",
+        "Application Task",
+        "Temperature [degC]: 22.50",
+        "Temperature [degC]: -5.25"
+      ]
+    },
+    {
+      "name": "unplugged",
+      "platform": "sim/clicks/mikrobus1-i2c.repl",
+      "commands": ["emulation RunFor \"0.4\""],
+      "uart": ["Application Init", "ERROR  Default configuration."]
+    }
+  ]
+}
